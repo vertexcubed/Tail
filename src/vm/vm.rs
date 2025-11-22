@@ -2,22 +2,30 @@ use log::error;
 use crate::vm::{CodeChunk, Instruction, StackFrame, StackValue};
 
 pub struct TailVirtualMachine<'vm> {
+    constant_pool: Vec<StackValue<'vm>>,
     op_stack: Vec<StackValue<'vm>>,
     call_stack: Vec<StackFrame<'vm>>,
 }
 impl <'vm> TailVirtualMachine<'vm> {
     pub fn new() -> Self {
         let mut call_stack = Vec::with_capacity(512);
-        call_stack.push(StackFrame::base());
         Self {
+            constant_pool: Vec::with_capacity(64),
             op_stack: Vec::with_capacity(256),
             call_stack,
         }
     }
 
-    pub fn run(&mut self, code_chunk: CodeChunk) {
-        let mut ip = 0;
+    pub fn add_to_constant_pool(&mut self, value: StackValue<'vm>) -> usize {
+        self.constant_pool.push(value);
+        self.constant_pool.len() - 1
+    }
 
+    pub fn run(&mut self, base_chunk: &'vm CodeChunk) {
+        let mut ip = 0;
+        self.push_frame(StackFrame::base(base_chunk));
+
+        let mut code_chunk = self.call_stack.last().unwrap().code_chunk;
         while(ip < code_chunk.data.len()) {
             let mut next_ip = None;
             match code_chunk[ip] {
@@ -29,7 +37,7 @@ impl <'vm> TailVirtualMachine<'vm> {
                 Instruction::IPush4 => self.push(StackValue::Int(4)),
                 Instruction::IPush5 => self.push(StackValue::Int(5)),
                 Instruction::IPush(value) => self.push(StackValue::Int(value)),
-                Instruction::Ldc(index) => {}
+                Instruction::Ldc(index) => self.push(self.constant_pool[index].clone()),
                 Instruction::Store0 => {
                     let top = self.pop();
                     self.store(0, top);
@@ -71,27 +79,27 @@ impl <'vm> TailVirtualMachine<'vm> {
                     self.push(value);
                 }
                 Instruction::IAdd => {
-                    let second: i64 = self.pop().into();
                     let first: i64 = self.pop().into();
+                    let second: i64 = self.pop().into();
                     self.push(StackValue::Int(first + second))
                 }
                 Instruction::ISub => {
-                    let second: i64 = self.pop().into();
                     let first: i64 = self.pop().into();
+                    let second: i64 = self.pop().into();
                     self.push(StackValue::Int(first - second))
                 }
                 Instruction::IMul => {
-                    let second: i64 = self.pop().into();
                     let first: i64 = self.pop().into();
+                    let second: i64 = self.pop().into();
                     self.push(StackValue::Int(first * second))
                 }
                 Instruction::IDiv => {
+                    let first: i64 = self.pop().into();
                     let second: i64 = self.pop().into();
                     if second == 0 {
                         //error here. TODOD
                         error!("Divide by 0");
                     }
-                    let first: i64 = self.pop().into();
                     self.push(StackValue::Int(first / second))
                 }
                 Instruction::Swap => {
@@ -127,13 +135,30 @@ impl <'vm> TailVirtualMachine<'vm> {
                     let to_test: i64 = self.pop().into();
                     if to_test >= 0 { next_ip = Some(index as usize); }
                 }
+                Instruction::Call => {
+                    let StackValue::Function(arity, chunk) = self.pop() else {
+                        panic!("Should never be reached")
+                    };
+                    let mut new_frame = StackFrame::new(chunk, ip + 1);
+                    new_frame.slots[0] = Some(StackValue::Function(arity, chunk));
+                    for i in 0..(arity as usize) {
+                        new_frame.slots[i + 1] = Some(self.pop());
+                    }
+                    self.push_frame(new_frame);
+                    next_ip = Some(0);
+                }
+                Instruction::Ret => {
+                    let old_frame = self.pop_frame();
+                    next_ip = Some(old_frame.return_address);
+                }
             }
             if next_ip.is_none() {
                 next_ip = Some(ip + 1);
             }
             ip = next_ip.unwrap();
+            code_chunk = self.call_stack.last().unwrap().code_chunk;
         }
-        
+
         println!("{:?}", self.call_stack);
         println!("{:?}", self.op_stack);
     }

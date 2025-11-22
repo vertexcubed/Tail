@@ -53,7 +53,7 @@ impl Index<usize> for CodeChunk {
     }
 }
 
-pub type Address = u32;
+pub type Address = usize;
 
 
 #[derive(Debug)]
@@ -61,21 +61,24 @@ pub struct StackFrame<'vm> {
     slots: Vec<Option<StackValue<'vm>>>,
     return_address: Address,
     is_base: bool,
+    code_chunk: &'vm CodeChunk,
 }
 impl<'vm> StackFrame<'vm> {
-    pub fn base() -> Self {
+    pub fn base(code_chunk: &'vm CodeChunk) -> Self {
         Self {
             slots: vec![None; 8],
             return_address: 0,
-            is_base: true
+            is_base: true,
+            code_chunk,
         }
     }
 
-    pub fn new(return_address: Address) -> Self {
+    pub fn new(code_chunk: &'vm CodeChunk, return_address: Address) -> Self {
         Self {
             slots: vec![None; 8],
             return_address,
-            is_base: false
+            is_base: false,
+            code_chunk,
         }
     }
 
@@ -109,7 +112,7 @@ pub enum Instruction {
     IPush4,
     IPush5,
     IPush(i64),
-    Ldc(i32),
+    Ldc(usize),
     Store0,
     Store1,
     Store2,
@@ -132,4 +135,6 @@ pub enum Instruction {
     JGt(u16),
     JLe(u16),
     JGe(u16),
+    Call,
+    Ret,
 }
