@@ -1,39 +1,18 @@
 use std::ops::{Index, IndexMut};
+use crate::vm::memory::MemoryAddress;
 
 pub mod vm;
+mod memory;
 
 #[derive(Debug, Clone)]
 pub enum StackValue<'vm> {
     Int(i64),
     Float(f64),
     Char(char),
+    Struct(Vec<StackValue<'vm>>),
+    Ref(MemoryAddress),
     Function(u8, &'vm CodeChunk),
 }
-impl Into<i64> for StackValue<'_> {
-    fn into(self) -> i64 {
-        match self {
-            StackValue::Int(i) => i,
-            _ => panic!("Should never be reached by VM"),
-        }
-    }
-}
-impl Into<f64> for StackValue<'_> {
-    fn into(self) -> f64 {
-        match self {
-            StackValue::Float(f) => f,
-            _ => panic!("Should never be reached by VM"),
-        }
-    }
-}
-impl Into<char> for StackValue<'_> {
-    fn into(self) -> char {
-        match self {
-            StackValue::Char(c) => c,
-            _ => panic!("Should never be reached by VM"),
-        }
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct CodeChunk {
     pub data: Vec<Instruction>
@@ -104,25 +83,52 @@ impl<'vm> StackFrame<'vm> {
 
 #[derive(Debug, Clone)]
 pub enum Instruction {
+    /// Pushes the int value -1 onto the stack.
     IPushM1,
+    /// Pushes the int value 0 onto the stack.
     IPush0,
+    /// Pushes the int value 1 onto the stack.
     IPush1,
+    /// Pushes the int value 2 onto the stack.
     IPush2,
+    /// Pushes the int value 3 onto the stack.
     IPush3,
+    /// Pushes the int value 4 onto the stack.
     IPush4,
+    /// Pushes the int value 5 onto the stack.
     IPush5,
+    /// Pushes the int value provided onto the stack.
     IPush(i64),
+    /// Pops the top value off the stack and discards
+    Pop,
+    /// Read a constant from the constant pool table
     Ldc(usize),
+    /// Stores the top value on the stack into stack frame memory slot 0
     Store0,
+    /// Stores the top value on the stack into stack frame memory slot 1
     Store1,
+    /// Stores the top value on the stack into stack frame memory slot 2
     Store2,
+    /// Stores the top value on the stack into stack frame memory slot 3
     Store3,
+    /// Stores the top value on the stack into stack frame memory slot n
     Store(u8),
+    /// Loads the value from stack frame memory slot 0 onto the stack
     Load0,
+    /// Loads the value from stack frame memory slot 1 onto the stack
     Load1,
+    /// Loads the value from stack frame memory slot 2 onto the stack
     Load2,
+    /// Loads the value from stack frame memory slot 3 onto the stack
     Load3,
+    /// Loads the value from stack frame memory slot n onto the stack
     Load(u8),
+    /// Allocates the top value on the stack into the heap and pushes a pointer to it back on
+    Alloc,
+    /// Pops the first n elements off the stack and puts them in a struct, which is then pushed onto the stack
+    Struct(u8),
+    /// Gets the field of the struct currently on the stack. Needs to either be a Reference or a struct!
+    // GetField(u16),
     IAdd,
     ISub,
     IMul,

@@ -38,12 +38,11 @@ fn main() {
         Store1,
         IPush5,
         Store2,
+        Load2,
         Load0,
         Load1,
         Ldc(func_idx),
         Call,
-        Load2,
-        Swap,
         ISub,
     ];
     let chunk = CodeChunk::new(instrs);

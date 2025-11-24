@@ -1,10 +1,12 @@
 use log::error;
 use crate::vm::{CodeChunk, Instruction, StackFrame, StackValue};
+use crate::vm::memory::Heap;
 
 pub struct TailVirtualMachine<'vm> {
     constant_pool: Vec<StackValue<'vm>>,
     op_stack: Vec<StackValue<'vm>>,
     call_stack: Vec<StackFrame<'vm>>,
+    heap: Heap<'vm>,
 }
 impl <'vm> TailVirtualMachine<'vm> {
     pub fn new() -> Self {
@@ -13,6 +15,7 @@ impl <'vm> TailVirtualMachine<'vm> {
             constant_pool: Vec::with_capacity(64),
             op_stack: Vec::with_capacity(256),
             call_stack,
+            heap: Heap::new(),
         }
     }
 
@@ -79,23 +82,31 @@ impl <'vm> TailVirtualMachine<'vm> {
                     self.push(value);
                 }
                 Instruction::IAdd => {
-                    let first: i64 = self.pop().into();
-                    let second: i64 = self.pop().into();
+                    let value = self.pop();
+                    let first = self.read_as_int(&value);
+                    let value = self.pop();
+                    let second = self.read_as_int(&value);
                     self.push(StackValue::Int(first + second))
                 }
                 Instruction::ISub => {
-                    let first: i64 = self.pop().into();
-                    let second: i64 = self.pop().into();
+                    let value = self.pop();
+                    let first = self.read_as_int(&value);
+                    let value = self.pop();
+                    let second = self.read_as_int(&value);
                     self.push(StackValue::Int(first - second))
                 }
                 Instruction::IMul => {
-                    let first: i64 = self.pop().into();
-                    let second: i64 = self.pop().into();
+                    let value = self.pop();
+                    let first = self.read_as_int(&value);
+                    let value = self.pop();
+                    let second = self.read_as_int(&value);
                     self.push(StackValue::Int(first * second))
                 }
                 Instruction::IDiv => {
-                    let first: i64 = self.pop().into();
-                    let second: i64 = self.pop().into();
+                    let value = self.pop();
+                    let first = self.read_as_int(&value);
+                    let value = self.pop();
+                    let second = self.read_as_int(&value);
                     if second == 0 {
                         //error here. TODOD
                         error!("Divide by 0");
@@ -112,27 +123,33 @@ impl <'vm> TailVirtualMachine<'vm> {
                     next_ip = Some(index as usize);
                 }
                 Instruction::JEq(index) => {
-                    let to_test: i64 = self.pop().into();
+                    let value = self.pop();
+                    let to_test = self.read_as_int(&value);
                     if to_test == 0 { next_ip = Some(index as usize); }
                 }
                 Instruction::JNe(index) => {
-                    let to_test: i64 = self.pop().into();
+                    let value = self.pop();
+                    let to_test = self.read_as_int(&value);
                     if to_test != 0 { next_ip = Some(index as usize); }
                 }
                 Instruction::JLt(index) => {
-                    let to_test: i64 = self.pop().into();
+                    let value = self.pop();
+                    let to_test = self.read_as_int(&value);
                     if to_test < 0 { next_ip = Some(index as usize); }
                 }
                 Instruction::JGt(index) => {
-                    let to_test: i64 = self.pop().into();
+                    let value = self.pop();
+                    let to_test = self.read_as_int(&value);
                     if to_test > 0 { next_ip = Some(index as usize); }
                 }
                 Instruction::JLe(index) => {
-                    let to_test: i64 = self.pop().into();
+                    let value = self.pop();
+                    let to_test = self.read_as_int(&value);
                     if to_test <= 0 { next_ip = Some(index as usize); }
                 }
                 Instruction::JGe(index) => {
-                    let to_test: i64 = self.pop().into();
+                    let value = self.pop();
+                    let to_test = self.read_as_int(&value);
                     if to_test >= 0 { next_ip = Some(index as usize); }
                 }
                 Instruction::Call => {
@@ -151,6 +168,23 @@ impl <'vm> TailVirtualMachine<'vm> {
                     let old_frame = self.pop_frame();
                     next_ip = Some(old_frame.return_address);
                 }
+                Instruction::Struct(elements) => {
+                    let mut fields = Vec::with_capacity(elements as usize);
+                    for _ in 0..elements {
+                        fields.push(self.pop())
+                    }
+                    let strukt = StackValue::Struct(fields);
+                    self.push(strukt);
+                }
+                Instruction::Alloc => {
+                    let value = self.pop();
+                    let pointer = self.heap.alloc(value);
+                    self.push(StackValue::Ref(pointer));
+                }
+                Instruction::Pop => {
+                    //discard
+                    self.pop();
+                }
             }
             if next_ip.is_none() {
                 next_ip = Some(ip + 1);
@@ -158,12 +192,51 @@ impl <'vm> TailVirtualMachine<'vm> {
             ip = next_ip.unwrap();
             code_chunk = self.call_stack.last().unwrap().code_chunk;
         }
-
+        println!("{:?}", self.heap);
         println!("{:?}", self.call_stack);
         println!("{:?}", self.op_stack);
     }
+    
+    // performs a dereference on the value provided. If the value is not a reference, it just returns
+    fn read(&self, value: &'vm StackValue) -> &StackValue {
+        match value {
+            StackValue::Ref(addr) => self.heap.read(*addr),
+            _ => value
+        }
+    }
+    
+    fn read_as_int(&self, value: &'vm StackValue) -> i64 {
+        match value {
+            // Circular references *should* never happen?
+            StackValue::Ref(addr) => self.read_as_int(self.heap.read(*addr)),
+            StackValue::Int(num) => *num,
+            _ => panic!("Cant read non int as int")
+        }
+    }
 
+    fn read_as_float(&self, value: &'vm StackValue) -> f64 {
+        match value {
+            // Circular references *should* never happen?
+            StackValue::Ref(addr) => self.read_as_float(self.heap.read(*addr)),
+            StackValue::Float(num) => *num,
+            _ => panic!("Cant read non float as float")
+        }
+    }
 
+    fn read_as_char(&self, value: &'vm StackValue) -> char {
+        match value {
+            // Circular references *should* never happen?
+            StackValue::Ref(addr) => self.read_as_char(self.heap.read(*addr)),
+            StackValue::Char(ch) => *ch,
+            _ => panic!("Cant read non char as char")
+        }
+    }
+    
+    
+    
+    
+    
+    
     fn push_frame(&mut self, frame: StackFrame<'vm>) {
         self.call_stack.push(frame);
     }
