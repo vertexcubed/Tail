@@ -6,10 +6,10 @@ pub type MemoryAddress = usize;
 /// Simple abstraction of a "heap" like object, so we can easily refer to things.
 /// In practice, the implementation may change. For now it's just a vec.
 #[derive(Debug)]
-pub struct Heap<'vm> {
-    values: Vec<StackValue<'vm>>,
+pub struct Heap {
+    values: Vec<StackValue>,
 }
-impl <'vm> Heap<'vm> {
+impl  Heap {
 
     pub fn new() -> Self {
         Self {
@@ -17,17 +17,21 @@ impl <'vm> Heap<'vm> {
         }
     }
 
-    pub fn alloc(&mut self, value: StackValue<'vm>) -> MemoryAddress {
+    pub fn alloc(&mut self, value: StackValue) -> MemoryAddress {
         let ret = self.values.len();
         self.values.push(value);
         ret
     }
 
-    pub fn read(&self, index: MemoryAddress) -> &StackValue<'vm> {
+    pub fn read(&self, index: MemoryAddress) -> &StackValue {
         &self.values[index]
     }
 
-    pub fn write(&mut self, index: MemoryAddress, value: StackValue<'vm>) {
+    pub fn read_mut(&mut self, index: MemoryAddress) -> &mut StackValue {
+        &mut self.values[index]
+    }
+
+    pub fn write(&mut self, index: MemoryAddress, value: StackValue) {
         self.values[index] = value;
     }
 }

@@ -1,14 +1,15 @@
+use std::rc::Rc;
 use log::error;
-use crate::vm::{CodeChunk, Instruction, StackFrame, StackValue};
+use crate::vm::{CodeChunk, ConstantPoolEntry, Instruction, StackFrame, StackValue, StructValue};
 use crate::vm::memory::Heap;
 
-pub struct TailVirtualMachine<'vm> {
-    constant_pool: Vec<StackValue<'vm>>,
-    op_stack: Vec<StackValue<'vm>>,
-    call_stack: Vec<StackFrame<'vm>>,
-    heap: Heap<'vm>,
+pub struct TailVirtualMachine {
+    constant_pool: Vec<ConstantPoolEntry>,
+    op_stack: Vec<StackValue>,
+    call_stack: Vec<StackFrame>,
+    heap: Heap,
 }
-impl <'vm> TailVirtualMachine<'vm> {
+impl TailVirtualMachine {
     pub fn new() -> Self {
         let mut call_stack = Vec::with_capacity(512);
         Self {
@@ -19,16 +20,11 @@ impl <'vm> TailVirtualMachine<'vm> {
         }
     }
 
-    pub fn add_to_constant_pool(&mut self, value: StackValue<'vm>) -> usize {
-        self.constant_pool.push(value);
-        self.constant_pool.len() - 1
-    }
-
-    pub fn run(&mut self, base_chunk: &'vm CodeChunk) {
+    pub fn run(&mut self, base_chunk: Rc<CodeChunk>) {
         let mut ip = 0;
         self.push_frame(StackFrame::base(base_chunk));
 
-        let mut code_chunk = self.call_stack.last().unwrap().code_chunk;
+        let mut code_chunk = self.call_stack.last().unwrap().code_chunk.clone();
         while(ip < code_chunk.data.len()) {
             let mut next_ip = None;
             match code_chunk[ip] {
@@ -40,7 +36,10 @@ impl <'vm> TailVirtualMachine<'vm> {
                 Instruction::IPush4 => self.push(StackValue::Int(4)),
                 Instruction::IPush5 => self.push(StackValue::Int(5)),
                 Instruction::IPush(value) => self.push(StackValue::Int(value)),
-                Instruction::Ldc(index) => self.push(self.constant_pool[index].clone()),
+                Instruction::Ldc(index) => {
+                    let value = self.load_constant(index).as_stack_value();
+                    self.push(value);
+                },
                 Instruction::Store0 => {
                     let top = self.pop();
                     self.store(0, top);
@@ -59,8 +58,28 @@ impl <'vm> TailVirtualMachine<'vm> {
                 }
                 Instruction::Store(index) => {
                     let top = self.pop();
-                    self.store(index as usize, top);
+                    self.store(index, top);
                 }
+                Instruction::StoreInd0 => {
+                    let top = self.pop();
+                    self.store_ind(0, top);
+                },
+                Instruction::StoreInd1 => {
+                    let top = self.pop();
+                    self.store_ind(1, top);
+                },
+                Instruction::StoreInd2 => {
+                    let top = self.pop();
+                    self.store_ind(2, top);
+                },
+                Instruction::StoreInd3 => {
+                    let top = self.pop();
+                    self.store_ind(3, top);
+                },
+                Instruction::StoreInd(index) => {
+                    let top = self.pop();
+                    self.store_ind(index, top);
+                },
                 Instruction::Load0 => {
                     let value = self.load(0);
                     self.push(value);
@@ -108,7 +127,7 @@ impl <'vm> TailVirtualMachine<'vm> {
                     let value = self.pop();
                     let second = self.read_as_int(&value);
                     if second == 0 {
-                        //error here. TODOD
+                        //error here. TODO
                         error!("Divide by 0");
                     }
                     self.push(StackValue::Int(first / second))
@@ -156,7 +175,7 @@ impl <'vm> TailVirtualMachine<'vm> {
                     let StackValue::Function(arity, chunk) = self.pop() else {
                         panic!("Should never be reached")
                     };
-                    let mut new_frame = StackFrame::new(chunk, ip + 1);
+                    let mut new_frame = StackFrame::new(chunk.clone(), ip + 1);
                     new_frame.slots[0] = Some(StackValue::Function(arity, chunk));
                     for i in 0..(arity as usize) {
                         new_frame.slots[i + 1] = Some(self.pop());
@@ -168,14 +187,56 @@ impl <'vm> TailVirtualMachine<'vm> {
                     let old_frame = self.pop_frame();
                     next_ip = Some(old_frame.return_address);
                 }
-                Instruction::Struct(elements) => {
-                    let mut fields = Vec::with_capacity(elements as usize);
-                    for _ in 0..elements {
-                        fields.push(self.pop())
-                    }
-                    let strukt = StackValue::Struct(fields);
-                    self.push(strukt);
+                Instruction::Struct(index) => {
+                    let def = self.load_constant(index).as_struct_def();
+                    let strukt = StructValue::from_def(def);
+                    self.push(StackValue::Struct(strukt));
                 }
+                Instruction::GetField(index) => {
+                    let strukt = match self.pop() {
+                        StackValue::Struct(v) => v,
+                        _ => panic!("Can't get field of non struct!")
+                    };
+                    let field = self.load_constant(index).as_identifier();
+                    let new_value = strukt.get(field);
+                    self.push(new_value);
+                }
+                Instruction::SetField(index) => {
+                    let to_set = self.pop();
+                    let mut strukt = match self.pop() {
+                        StackValue::Struct(v) => v,
+                        _ => panic!("Can't set field of non struct!")
+                    };
+                    let field = self.load_constant(index).as_identifier();
+                    strukt.put(field, to_set);
+                    self.push(StackValue::Struct(strukt));
+                }
+                Instruction::GetFieldInd(index) => {
+                    let pointer = match(self.pop()) {
+                        StackValue::Ref(addr) => match self.heap.read(addr) {
+                            StackValue::Struct(strukt) => strukt,
+                            _ => panic!("Can't get field of non struct!")
+                        },
+                        _ => panic!("Can't indirect get from a non reference!")
+                    };
+                    let field = self.load_constant(index).as_identifier();
+                    let new_value = pointer.get(field);
+                    self.push(new_value);
+                },
+                Instruction::SetFieldInd(index) => {
+                    let field = self.load_constant(index).as_identifier();
+                    let value = self.pop();
+                    let addr = match self.pop() {
+                        StackValue::Ref(addr) => addr,
+                        _ => panic!("Can't indirect get from a non reference!")
+                    };
+                    let pointer = match self.heap.read_mut(addr) {
+                        StackValue::Struct(strukt) => strukt,
+                        _ => panic!("Can't set field of non struct!")
+                    };
+                    pointer.put(field, value);
+                    self.push(StackValue::Ref(addr));
+                },
                 Instruction::Alloc => {
                     let value = self.pop();
                     let pointer = self.heap.alloc(value);
@@ -190,22 +251,14 @@ impl <'vm> TailVirtualMachine<'vm> {
                 next_ip = Some(ip + 1);
             }
             ip = next_ip.unwrap();
-            code_chunk = self.call_stack.last().unwrap().code_chunk;
+            code_chunk = self.call_stack.last().unwrap().code_chunk.clone();
         }
         println!("{:?}", self.heap);
         println!("{:?}", self.call_stack);
         println!("{:?}", self.op_stack);
     }
     
-    // performs a dereference on the value provided. If the value is not a reference, it just returns
-    fn read(&self, value: &'vm StackValue) -> &StackValue {
-        match value {
-            StackValue::Ref(addr) => self.heap.read(*addr),
-            _ => value
-        }
-    }
-    
-    fn read_as_int(&self, value: &'vm StackValue) -> i64 {
+    fn read_as_int(&self, value: &StackValue) -> i64 {
         match value {
             // Circular references *should* never happen?
             StackValue::Ref(addr) => self.read_as_int(self.heap.read(*addr)),
@@ -214,7 +267,7 @@ impl <'vm> TailVirtualMachine<'vm> {
         }
     }
 
-    fn read_as_float(&self, value: &'vm StackValue) -> f64 {
+    fn read_as_float(&self, value: &StackValue) -> f64 {
         match value {
             // Circular references *should* never happen?
             StackValue::Ref(addr) => self.read_as_float(self.heap.read(*addr)),
@@ -223,7 +276,7 @@ impl <'vm> TailVirtualMachine<'vm> {
         }
     }
 
-    fn read_as_char(&self, value: &'vm StackValue) -> char {
+    fn read_as_char(&self, value: &StackValue) -> char {
         match value {
             // Circular references *should* never happen?
             StackValue::Ref(addr) => self.read_as_char(self.heap.read(*addr)),
@@ -232,32 +285,46 @@ impl <'vm> TailVirtualMachine<'vm> {
         }
     }
     
-    
-    
-    
-    
-    
-    fn push_frame(&mut self, frame: StackFrame<'vm>) {
+    fn push_frame(&mut self, frame: StackFrame) {
         self.call_stack.push(frame);
     }
 
-    fn pop_frame(&mut self) -> StackFrame<'vm> {
+    fn pop_frame(&mut self) -> StackFrame {
         self.call_stack.pop().unwrap()
     }
 
-    fn push(&mut self, value: StackValue<'vm>) {
+    fn push(&mut self, value: StackValue) {
         self.op_stack.push(value);
     }
 
-    fn pop(&mut self) -> StackValue<'vm> {
+    fn pop(&mut self) -> StackValue {
         self.op_stack.pop().unwrap()
     }
 
-    fn store(&mut self, slot: usize, value: StackValue<'vm>) {
+    fn peek(&self) -> &StackValue {
+        self.op_stack.last().unwrap()
+    }
+    fn peek_mut(&mut self) -> &mut StackValue {
+        self.op_stack.last_mut().unwrap()
+    }
+
+    fn store(&mut self, slot: usize, value: StackValue) {
         self.call_stack.last_mut().unwrap().store(slot, value);
     }
 
-    fn load(&self, slot: usize) -> StackValue<'vm> {
+    fn store_ind(&mut self, slot: usize, value: StackValue) {
+        let addr = match self.load(slot) {
+            StackValue::Ref(addr) => addr,
+            _ => panic!("Can't indirect store into non reference!")
+        };
+        self.heap.write(addr, value);
+    }
+
+    fn load(&self, slot: usize) -> StackValue {
         self.call_stack.last().unwrap().load(slot)
+    }
+
+    fn load_constant(&self, index: usize) -> &ConstantPoolEntry {
+        &self.constant_pool[index]
     }
 }
