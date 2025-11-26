@@ -20,6 +20,13 @@ impl TailVirtualMachine {
         }
     }
 
+    // Temporary.
+    pub fn add_to_const_pool(&mut self, entry: ConstantPoolEntry) -> usize {
+        let len = self.constant_pool.len();
+        self.constant_pool.push(entry);
+        len
+    }
+
     pub fn run(&mut self, base_chunk: Rc<CodeChunk>) {
         let mut ip = 0;
         self.push_frame(StackFrame::base(base_chunk));
@@ -60,26 +67,6 @@ impl TailVirtualMachine {
                     let top = self.pop();
                     self.store(index, top);
                 }
-                Instruction::StoreInd0 => {
-                    let top = self.pop();
-                    self.store_ind(0, top);
-                },
-                Instruction::StoreInd1 => {
-                    let top = self.pop();
-                    self.store_ind(1, top);
-                },
-                Instruction::StoreInd2 => {
-                    let top = self.pop();
-                    self.store_ind(2, top);
-                },
-                Instruction::StoreInd3 => {
-                    let top = self.pop();
-                    self.store_ind(3, top);
-                },
-                Instruction::StoreInd(index) => {
-                    let top = self.pop();
-                    self.store_ind(index, top);
-                },
                 Instruction::Load0 => {
                     let value = self.load(0);
                     self.push(value);
@@ -242,9 +229,29 @@ impl TailVirtualMachine {
                     let pointer = self.heap.alloc(value);
                     self.push(StackValue::Ref(pointer));
                 }
+                Instruction::Deref => {
+                    let value = match self.pop() {
+                        StackValue::Ref(addr) => self.heap.read(addr).clone(),
+                        _ => panic!("Can't deref non reference!")
+                    };
+                    self.push(value);
+                }
+                Instruction::Write => {
+                    let value = self.pop();
+                    let addr = match self.pop() {
+                        StackValue::Ref(addr) => addr,
+                        _ => panic!("Can't deref non reference!")
+                    };
+                    self.heap.write(addr, value);
+                    self.push(StackValue::Ref(addr));
+                }
                 Instruction::Pop => {
                     //discard
                     self.pop();
+                },
+                Instruction::Dup => {
+                    let value = self.peek().clone();
+                    self.push(value);
                 }
             }
             if next_ip.is_none() {

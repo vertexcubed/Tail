@@ -181,6 +181,8 @@ pub enum Instruction {
     IPush(i64),
     /// Pops the top value off the stack and discards
     Pop,
+    /// Duplicates the top value on the stack
+    Dup,
     /// Read a constant from the constant pool table
     Ldc(usize),
     /// Stores the top value on the stack into stack frame memory slot 0
@@ -193,16 +195,6 @@ pub enum Instruction {
     Store3,
     /// Stores the top value on the stack into stack frame memory slot n
     Store(usize),
-    /// Stores the top value on the stack into the memory address at stack frame memory slot 0
-    StoreInd0,
-    /// Stores the top value on the stack into the memory address at stack frame memory slot 1
-    StoreInd1,
-    /// Stores the top value on the stack into the memory address at stack frame memory slot 2
-    StoreInd2,
-    /// Stores the top value on the stack into the memory address at stack frame memory slot 3
-    StoreInd3,
-    /// Stores the top value on the stack into the memory address at stack frame memory slot n
-    StoreInd(usize),
     /// Loads the value from stack frame memory slot 0 onto the stack
     Load0,
     /// Loads the value from stack frame memory slot 1 onto the stack
@@ -215,6 +207,10 @@ pub enum Instruction {
     Load(u8),
     /// Allocates the top value on the stack into the heap and pushes a pointer to it back on
     Alloc,
+    /// Pops the pointer on the stack and derefs, copying and pushing its value
+    Deref,
+    /// Pops the top value on off the stack and writes it into the memory address below it.
+    Write,
     /// Creates an empty struct based on the struct def from the LDC
     Struct(usize),
     /// Pops the top struct off the top of the stack and gets the field from the LDC.
