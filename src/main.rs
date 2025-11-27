@@ -7,6 +7,72 @@ mod vm;
 mod ast;
 mod ty;
 
+
+macro_rules! impl_id {
+    ($typ:ty) => {
+        impl std::ops::Add for $typ {
+            type Output = $typ;
+            fn add(self, rhs: Self) -> Self::Output {
+                Self(self.0 + rhs.0)
+            }
+        }
+        impl std::ops::Sub for $typ {
+            type Output = $typ;
+            fn sub(self, rhs: Self) -> Self::Output {
+                Self(self.0 - rhs.0)
+            }
+        }
+        impl std::ops::AddAssign<$typ> for $typ {
+            fn add_assign(&mut self, rhs: Self) {
+                self.0 += rhs.0;
+            }
+        }
+        impl std::ops::SubAssign<$typ> for $typ {
+            fn sub_assign(&mut self, rhs: Self) {
+                self.0 -= rhs.0;
+            }
+        }
+        impl std::ops::Add<usize> for $typ {
+            type Output = $typ;
+            fn add(self, rhs: usize) -> Self::Output {
+                Self(self.0 + rhs)
+            }
+        }
+        impl std::ops::Sub<usize> for $typ {
+            type Output = $typ;
+            fn sub(self, rhs: usize) -> Self::Output {
+                Self(self.0 - rhs)
+            }
+        }
+        impl std::ops::AddAssign<usize> for $typ {
+            fn add_assign(&mut self, rhs: usize) {
+                self.0 += rhs;
+            }
+        }
+        impl std::ops::SubAssign<usize> for $typ {
+            fn sub_assign(&mut self, rhs: usize) {
+                self.0 -= rhs;
+            }
+        }
+        impl Into<usize> for $typ {
+            fn into(self) -> usize { 
+                self.0
+            }
+        }
+        impl From<usize> for $typ {
+            fn from(value: usize) -> Self {
+                Self(value)
+            }
+        }
+    };
+}
+pub(crate) use impl_id;
+
+
+
+
+
+
 fn main() {
 
     let mut vm = TailVirtualMachine::new();
