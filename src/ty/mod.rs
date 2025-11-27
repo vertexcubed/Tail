@@ -1,5 +1,5 @@
-use std::any::TypeId;
 use std::collections::HashMap;
+use std::fmt::{Display, Formatter};
 use std::ops::{Add, Sub};
 use crate::ast::NodeId;
 use crate::impl_id;
@@ -26,6 +26,11 @@ impl Ty {
         }
     }
 }
+impl Display for Ty {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "'{} ({})", self.id, self.kind)
+    }
+}
 
 
 #[derive(Debug, Clone)]
@@ -40,6 +45,11 @@ pub enum TyKind {
     Infer(InferTy),
     Function(Vec<Ty>, Box<Ty>),
 }
+impl Display for TyKind {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", &self)
+    }
+}
 
 #[derive(Debug, Clone)]
 pub enum InferTy {
@@ -47,9 +57,20 @@ pub enum InferTy {
     FreshTyVar
 }
 
-
+#[derive(thiserror::Error, Debug, Clone)]
 pub enum TyError {
+    #[error("Unification error")]
+    InvalidTy(#[from] UnifyError)
+}
 
+#[derive(thiserror::Error, Debug, Clone)]
+pub enum UnifyError {
+    #[error("Cannot unify {0} with {1}")]
+    InvalidUnify(Ty, Ty),
+    #[error("Function {0} and function {1} have non-matching arities")]
+    InvalidArity(Ty, Ty),
+    #[error("Type {0} occurs in type {1}")]
+    OccursIn(Ty, Ty),
 }
 
 #[derive(Debug)]
@@ -57,19 +78,24 @@ pub struct TyCtxt {
     node_types: HashMap<NodeId, Ty>,
     infer_ctxt: InferCtxt,
     pub common_types: CommonTypes,
-    next_var_id: TyId,
 }
 
 impl TyCtxt {
 
     pub fn new() -> TyCtxt {
 
-        let unit = Ty::new(0, TyKind::Unit);
-        let int = Ty::new(1, TyKind::Int);
-        let float = Ty::new(2, TyKind::Float);
-        let bool = Ty::new(3, TyKind::Bool);
-        let char = Ty::new(4, TyKind::Char);
-        let next_var_id = TyId(5);
+        let mut infer_ctxt = InferCtxt::new();
+        let unit = Ty::new(infer_ctxt.reserve_id(), TyKind::Unit);
+        let int = Ty::new(infer_ctxt.reserve_id(), TyKind::Int);
+        let float = Ty::new(infer_ctxt.reserve_id(), TyKind::Float);
+        let bool = Ty::new(infer_ctxt.reserve_id(), TyKind::Bool);
+        let char = Ty::new(infer_ctxt.reserve_id(), TyKind::Char);
+
+        infer_ctxt.add_type(unit.clone());
+        infer_ctxt.add_type(int.clone());
+        infer_ctxt.add_type(float.clone());
+        infer_ctxt.add_type(bool.clone());
+        infer_ctxt.add_type(char.clone());
         let common_types = CommonTypes {
             int,
             float,
@@ -81,7 +107,6 @@ impl TyCtxt {
             infer_ctxt: InferCtxt::new(),
             node_types: HashMap::new(),
             common_types,
-            next_var_id
         }
     }
 
@@ -94,25 +119,28 @@ impl TyCtxt {
     }
 
     pub fn unify(&mut self, left: &Ty, right: &Ty) -> Result<(), TyError> {
-        todo!()
+        self.infer_ctxt.unify(left, right).map_err(|u| TyError::InvalidTy(u))
     }
 
     pub fn new_type_var(&mut self) -> Ty {
-        let id = self.next_var_id;
-        self.next_var_id += 1;
-        Ty::new(id, TyKind::Infer(InferTy::TyVar))
+        let id = self.infer_ctxt.reserve_id();
+        let out = Ty::new(id, TyKind::Infer(InferTy::TyVar));
+        self.infer_ctxt.add_type(out.clone());
+        out
     }
 
     pub fn new_function_ty(&mut self, args: Vec<Ty>, ret: Ty) -> Ty {
-        let id = self.next_var_id;
-        self.next_var_id += 1;
-        Ty::new(id, TyKind::Function(args, Box::new(ret)))
+        let id = self.infer_ctxt.reserve_id();
+        let out = Ty::new(id, TyKind::Function(args, Box::new(ret)));
+        self.infer_ctxt.add_type(out.clone());
+        out
     }
 
     pub fn new_ref_ty(&mut self, value: Ty) -> Ty {
-        let id = self.next_var_id;
-        self.next_var_id += 1;
-        Ty::new(id, TyKind::Ref(Box::new(value)))
+        let id = self.infer_ctxt.reserve_id();
+        let out = Ty::new(id, TyKind::Ref(Box::new(value)));
+        self.infer_ctxt.add_type(out.clone());
+        out
     }
 }
 

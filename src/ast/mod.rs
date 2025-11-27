@@ -4,7 +4,7 @@ pub mod visit;
 
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-pub struct NodeId(usize);
+pub struct NodeId(pub usize);
 impl_id!(NodeId);
 
 #[derive(Debug, Clone, PartialEq, Eq)]

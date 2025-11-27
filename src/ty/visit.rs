@@ -1,4 +1,4 @@
-use crate::ast::{Block, Expr, ExprKind, FuncBlock, Identifier, Literal, Stmt};
+use crate::ast::{BinOp, Block, Expr, ExprKind, FuncBlock, Identifier, Literal, Stmt};
 use crate::ast::visit::AstVisitor;
 use crate::ty::{Ty, TyCtxt, TyError};
 
@@ -8,6 +8,21 @@ pub struct TypeVisitor {
 }
 impl TypeVisitor {
 
+    pub fn new() -> Self {
+        Self {
+            ctxt: TyCtxt::new(),
+        }
+    }
+    fn bop_types(&self, op: BinOp) -> (Ty, Ty) {
+        match op {
+            BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Mod =>
+                (self.ctxt.common_types.int.clone(), self.ctxt.common_types.int.clone()),
+            BinOp::And | BinOp::Or =>
+                (self.ctxt.common_types.bool.clone(), self.ctxt.common_types.bool.clone()),
+            BinOp::Lt | BinOp::Lte | BinOp::Gt | BinOp::Gte | BinOp::Eq | BinOp::NEq =>
+                (self.ctxt.common_types.int.clone(), self.ctxt.common_types.bool.clone())
+        }
+    }
 }
 impl AstVisitor for TypeVisitor {
     type Result = Result<Ty, TyError>;
@@ -29,7 +44,15 @@ impl AstVisitor for TypeVisitor {
                 Ok(id_ty)
             }
             ExprKind::UnaryOp(uop, e) => todo!(),
-            ExprKind::BinaryOp(bop, left, right) => todo!(),
+            ExprKind::BinaryOp(bop, left, right) => {
+                let (arg, ret) = self.bop_types(*bop);
+                let left_ty = self.visit_expr(left)?;
+                let right_ty = self.visit_expr(right)?;
+                self.ctxt.unify(&left_ty, &arg)?;
+                self.ctxt.unify(&right_ty, &arg)?;
+                self.ctxt.set_type_of_expr(expr.id, ret.clone());
+                Ok(ret)
+            },
             ExprKind::If(cond, then_branch, else_branch) => {
                 let cond_ty = self.visit_expr(cond)?;
                 self.ctxt.unify(&cond_ty, &self.ctxt.common_types.bool.clone())?;
@@ -92,7 +115,6 @@ impl AstVisitor for TypeVisitor {
             }
         }
     }
-
     fn visit_ident(&mut self, ident: &Identifier) -> Self::Result {
         // instantiate
         todo!()

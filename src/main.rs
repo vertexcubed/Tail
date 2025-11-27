@@ -55,7 +55,7 @@ macro_rules! impl_id {
             }
         }
         impl Into<usize> for $typ {
-            fn into(self) -> usize { 
+            fn into(self) -> usize {
                 self.0
             }
         }
@@ -64,16 +64,60 @@ macro_rules! impl_id {
                 Self(value)
             }
         }
+        impl std::fmt::Display for $typ {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                write!(f, "{}", self.0)
+            }
+        }
     };
 }
 pub(crate) use impl_id;
-
-
-
-
-
+use crate::ast::{BinOp, Expr, ExprKind, Literal, NodeId, Span};
+use crate::ast::visit::AstVisitor;
+use crate::ty::visit::TypeVisitor;
 
 fn main() {
+
+    let expr = Expr {
+        id: NodeId(0),
+        kind: ExprKind::BinaryOp(
+            BinOp::Add,
+            Box::new(Expr {
+                id: NodeId(1),
+                kind: ExprKind::BinaryOp(
+                    BinOp::Mul,
+                    Box::new(Expr {
+                        id: NodeId(2),
+                        kind: ExprKind::Lit(Literal::Float(2.0)),
+                        span: Span,
+                    }),
+                    Box::new(Expr {
+                        id: NodeId(2),
+                        kind: ExprKind::Lit(Literal::Int(5)),
+                        span: Span,
+                    })
+                ),
+                span: Span,
+            }),
+            Box::new(Expr {
+                id: NodeId(4),
+                kind: ExprKind::Lit(Literal::Int(3)),
+                span: Span,
+            })
+        ),
+        span: Span,
+    };
+
+    let mut visitor = TypeVisitor::new();
+    println!("{:?}", visitor.visit_expr(&expr));
+
+
+
+
+
+
+
+
 
     let mut vm = TailVirtualMachine::new();
 
