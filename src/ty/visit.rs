@@ -73,7 +73,7 @@ impl AstVisitor for TypeVisitor {
                     Some(e) => self.visit_expr(e)?,
                     None => self.ctxt.common_types.unit.clone(),
                 };
-                self.ctxt.local.ret_ty = Some(expr_ty);
+                self.ctxt.unify_ret(&Some(expr_ty))?;
                 self.set_type_of_expr(stmt.id, self.ctxt.common_types.unit.clone());
                 Ok(self.ctxt.common_types.unit.clone())
             }
@@ -150,7 +150,11 @@ impl AstVisitor for TypeVisitor {
             },
             ExprKind::Struct(strukt) => todo!(),
             ExprKind::Closure(name, args, body) => {
-                let arg_types = args.iter().map(|e| self.visit_expr(e)).collect::<Result<Vec<_>,_>>()?;
+                let arg_types = args.iter().map(|e| {
+                    let ty = self.ctxt.new_type_var();
+                    self.ctxt.bind(e.clone(), ty.clone());
+                    ty
+                }).collect::<Vec<_>>();
 
                 if let Some(name) = name {
                     // if name is some, then this is a recursive closure. We bind the name preemptively and then typecheck the body
@@ -159,7 +163,7 @@ impl AstVisitor for TypeVisitor {
                     self.ctxt.enter_func_scope();
                     self.ctxt.bind(name.clone(), ret.clone());
                     let body_ty = self.visit_func_block(body)?;
-                    self.ctxt.exit_scope();
+                    self.ctxt.exit_func_scope();
                     self.ctxt.unify(&body_ty, &expected_ret)?;
                     self.set_type_of_expr(expr.id, ret.clone());
                     Ok(ret)
@@ -167,7 +171,7 @@ impl AstVisitor for TypeVisitor {
                 else {
                     self.ctxt.enter_func_scope();
                     let body_ty = self.visit_func_block(body)?;
-                    self.ctxt.exit_scope();
+                    self.ctxt.exit_func_scope();
                     let ret = self.ctxt.new_function_ty(arg_types, body_ty);
                     self.set_type_of_expr(expr.id, ret.clone());
                     Ok(ret)

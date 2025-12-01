@@ -24,7 +24,10 @@ impl InferCtxt {
     }
 
     pub fn add_type(&mut self, ty: Ty) {
+        let id_num = ty.id.into();
         self.all_types.insert(ty.id, ty);
+        self.table.reserve_to(id_num);
+        self.table.vec[id_num] = id_num;
     }
 
     pub fn find<'ctx>(&'ctx mut self, ty: &'ctx Ty) -> &'ctx Ty {

@@ -72,7 +72,7 @@ macro_rules! impl_id {
     };
 }
 pub(crate) use impl_id;
-use crate::ast::{BinOp, Expr, ExprKind, Literal, NodeId, Span};
+use crate::ast::{BinOp, Block, Expr, ExprKind, FuncBlock, Literal, NodeId, PlaceExpr, Span, Stmt, StmtKind};
 use crate::ast::visit::AstVisitor;
 use crate::ty::visit::TypeVisitor;
 
@@ -88,33 +88,226 @@ fn main() {
                     BinOp::Mul,
                     Box::new(Expr {
                         id: NodeId(2),
-                        kind: ExprKind::Lit(Literal::Float(2.0)),
-                        span: Span,
+                        kind: ExprKind::Lit(Literal::Int(2)),
+                        // span: Span,
                     }),
                     Box::new(Expr {
                         id: NodeId(2),
                         kind: ExprKind::Lit(Literal::Int(5)),
-                        span: Span,
+                        // span: Span,
                     })
                 ),
-                span: Span,
+                // span: Span,
             }),
             Box::new(Expr {
                 id: NodeId(4),
                 kind: ExprKind::Lit(Literal::Int(3)),
-                span: Span,
+                // span: Span,
             })
         ),
-        span: Span,
+        // span: Span,
     };
 
     let mut visitor = TypeVisitor::new();
     println!("{:?}", visitor.visit_expr(&expr));
 
+    // fun(int, 'a, int) -> int
+    let func = Stmt {
+        id: NodeId(5),
+        // let main = fun(x, y, z) -> {}
+        kind: StmtKind::Let(
+            ast::Identifier("main".to_string()),
+            Box::new(Expr {
+                id: NodeId(6),
+                kind: ExprKind::Closure(
+                    Some(ast::Identifier("main".to_string())),
+                    vec![
+                        ast::Identifier("x".to_string()),
+                        ast::Identifier("y".to_string()),
+                        ast::Identifier("z".to_string()),
+                    ],
+                    Box::new(FuncBlock { stmts: vec![
+                        // if .. {} else {}
+                        Stmt {
+                            id: NodeId(7),
+                            kind: StmtKind::Expr(Box::new(Expr {
+                                id: NodeId(8),
+                                kind: ExprKind::If(
+                                    // x < 5
+                                    Box::new(Expr {
+                                        id: NodeId(9),
+                                        kind: ExprKind::BinaryOp(
+                                            BinOp::Lt,
+                                            Box::new(Expr {
+                                                id: NodeId(10),
+                                                kind: ExprKind::Ident(ast::Identifier("x".to_string()))
+                                            }),
+                                            Box::new(Expr {
+                                                id: NodeId(11),
+                                                kind: ExprKind::Lit(Literal::Int(5))
+                                            })
+                                        )
+                                    }),
+                                    // { return x }
+                                    Box::new(Block { stmts: vec![
+                                        Stmt {
+                                            id: NodeId(12),
+                                            kind: StmtKind::Ret(Some(Box::new(Expr {
+                                                id: NodeId(13),
+                                                kind: ExprKind::Ident(ast::Identifier("x".to_string()))
+                                            })))
+                                        }
+                                    ]}),
+                                    // else {}
+                                    Box::new(Block { stmts: vec![ ]})
+                                )
+                            }))
+                        },
+                        // return z
+                        Stmt {
+                            id: NodeId(14),
+                            kind: StmtKind::Ret(Some(Box::new(Expr {
+                                id: NodeId(15),
+                                kind: ExprKind::Ident(ast::Identifier("z".to_string()))
+                            })))
+                        }
+                    ]}),
+                )
+            })
+        )
+    };
+
+    let id = Expr {
+        id: NodeId(16),
+        kind: ExprKind::Ident(ast::Identifier("main".to_string())),
+    };
+
+    let fact = Stmt {
+        id: NodeId(17),
+        kind: StmtKind::Let(
+            ast::Identifier("factorial".to_string()),
+            Box::new(Expr {
+                id: NodeId(18),
+                kind: ExprKind::Closure(
+                    Some(ast::Identifier("factorial".to_string())),
+                    vec![
+                        ast::Identifier("n".to_string()),
+                    ],
+                    Box::new(FuncBlock { stmts: vec![
+                        // if n <= 1 { return 1 }
+                        Stmt {
+                            id: NodeId(19),
+                            kind: StmtKind::Expr(Box::new(Expr {
+                                id: NodeId(20),
+                                kind: ExprKind::If(
+                                    Box::new(Expr {
+                                        id: NodeId(21),
+                                        kind: ExprKind::BinaryOp(
+                                            BinOp::Lte,
+                                            Box::new(Expr {
+                                                id: NodeId(22),
+                                                kind: ExprKind::Ident(ast::Identifier("n".to_string()))
+                                            }),
+                                            Box::new(Expr {
+                                                id: NodeId(23),
+                                                kind: ExprKind::Lit(Literal::Int(1))
+                                            })
+                                        )
+                                    }),
+                                    Box::new(Block { stmts: vec![
+                                        Stmt {
+                                            id: NodeId(24),
+                                            kind: StmtKind::Ret(Some(Box::new(Expr {
+                                                id: NodeId(25),
+                                                kind: ExprKind::Lit(Literal::Int(1))
+                                            })))
+                                        }
+                                    ]}),
+                                    Box::new(Block { stmts: vec![ ]}),
+                                )
+                            }))
+                        },
+                        // let out = factorial(n - 1)
+                        Stmt {
+                            id: NodeId(26),
+                            kind: StmtKind::Let(
+                                ast::Identifier("out".to_string()),
+                                Box::new(Expr {
+                                    id: NodeId(27),
+                                    kind: ExprKind::Call(
+                                        Box::new(Expr {
+                                            id: NodeId(28),
+                                            kind: ExprKind::Ident(ast::Identifier("factorial".to_string())),
+                                        }),
+                                        vec![Expr {
+                                            id: NodeId(29),
+                                            kind: ExprKind::BinaryOp(
+                                                BinOp::Sub,
+                                                Box::new(Expr {
+                                                    id: NodeId(30),
+                                                    kind: ExprKind::Ident(ast::Identifier("n".to_string())),
+                                                }),
+                                                Box::new(Expr {
+                                                    id: NodeId(31),
+                                                    kind: ExprKind::Lit(Literal::Int(1))
+                                                }),
+                                            )
+                                        }]
+                                    )
+                                })
+                            )
+                        },
+                        // return out
+                        Stmt {
+                            id: NodeId(32),
+                            kind: StmtKind::Ret(Some(Box::new(Expr {
+                                id: NodeId(33),
+                                kind: ExprKind::Ident(ast::Identifier("out".to_string())),
+                            })))
+                        }
+                    ]})
+                )
+            })
+        )
+    };
+
+    let fact_func = Expr {
+        id: NodeId(34),
+        kind: ExprKind::Ident(ast::Identifier("factorial".to_string())),
+    };
 
 
 
 
+
+
+
+
+
+
+
+    println!("{:?}", visitor.visit_stmt(&func));
+    let expr_ty = visitor.visit_expr(&id);
+    println!("{:?}", visitor.visit_stmt(&fact));
+    let fact_ty = visitor.visit_expr(&fact_func);
+
+    if let Ok(t) = expr_ty {
+        let mut str = String::new();
+        visitor.ctxt.write_ty(&t, &mut str);
+        println!("{}", str);
+    }
+    else {
+        println!("{:?}", expr_ty)
+    }
+    
+    if let Ok(t) = fact_ty {
+        let mut str = String::new();
+        visitor.ctxt.write_ty(&t, &mut str);
+        println!("{}", str);
+    }
+    else {
+        println!("{:?}", fact_ty)
+    }
 
 
 

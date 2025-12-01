@@ -78,9 +78,11 @@ pub enum UnifyError {
 #[derive(Debug)]
 pub struct TyCtxt {
     local: LocalCtxt,
+    func: FuncCtxt,
     infer_ctxt: InferCtxt,
     pub common_types: CommonTypes,
-    scopes: VecDeque<LocalCtxt>
+    scopes: VecDeque<LocalCtxt>,
+    func_scopes: VecDeque<FuncCtxt>,
 }
 
 impl TyCtxt {
@@ -108,10 +110,12 @@ impl TyCtxt {
         };
         Self {
             local: LocalCtxt::new(),
-            infer_ctxt: InferCtxt::new(),
+            func: FuncCtxt::default(),
+            infer_ctxt,
             // node_types: HashMap::new(),
             common_types,
             scopes: VecDeque::new(),
+            func_scopes: VecDeque::new()
         }
     }
 
@@ -123,12 +127,19 @@ impl TyCtxt {
     // enters a function scope. The main difference is it resets the return type
     pub fn enter_func_scope(&mut self) {
         self.enter_scope();
-        self.local.ret_ty = None;
+
+        let old_func = std::mem::replace(&mut self.func, FuncCtxt::default());
+        self.func_scopes.push_back(old_func);
     }
 
     // exits a scope
     pub fn exit_scope(&mut self) {
         self.local = self.scopes.pop_back().unwrap();
+    }
+
+    pub fn exit_func_scope(&mut self) {
+        self.exit_scope();
+        self.func = self.func_scopes.pop_back().unwrap();
     }
 
 
@@ -167,12 +178,12 @@ impl TyCtxt {
         self.infer_ctxt.add_type(out.clone());
         out
     }
-    
+
     pub fn unify_ret(&mut self, ty: &Option<Ty>) -> Result<(), TyError> {
-        match (&self.local.ret_ty, ty) {
+        match (&self.func.ret, ty) {
             (Some(_), None) => {},
             (None, Some(r)) => {
-                self.local.ret_ty = Some(r.clone());
+                self.func.ret = Some(r.clone());
             }
             (Some(l), Some(r)) => {
                 // clone required because mutable + immutable refs :')
@@ -182,22 +193,60 @@ impl TyCtxt {
         }
         Ok(())
     }
-    
+
     pub fn get_ret_ty(&self) -> Option<Ty> {
-        self.local.ret_ty.clone()
+        self.func.ret.clone()
+    }
+    pub fn write_ty(&mut self, ty: &Ty, f: &mut impl std::fmt::Write) -> std::fmt::Result {
+        let ty = self.infer_ctxt.find(ty).clone();
+        match ty.kind {
+            TyKind::Int => {
+                write!(f, "int")
+            }
+            TyKind::Float => { write!(f, "float")}
+            TyKind::Bool => { write!(f, "bool")}
+            TyKind::Char => { write!(f, "char")}
+            TyKind::Unit => { write!(f, "unit")}
+            TyKind::Struct(s) => {
+                write!(f, "struct {{")?;
+                for t in s.iter() {
+                    self.write_ty(t, f)?;
+                };
+                write!(f, "}}")
+            }
+            TyKind::Ref(r) => {
+                write!(f, "ref ")?;
+                self.write_ty(r.as_ref(), f)
+            }
+            TyKind::Infer(_) => { write!(f, "'{}", ty.id)}
+            TyKind::Function(args, ret) => {
+                write!(f, "fun(")?;
+                for i in 0..args.len() {
+                    self.write_ty(&args[i], f)?;
+                    if i != args.len() - 1 {
+                        write!(f, ", ")?;
+                    }
+                }
+                write!(f, ") -> ")?;
+                self.write_ty(ret.as_ref(), f)
+            }
+        }
     }
 }
+#[derive(Debug, Clone, Default)]
+pub struct FuncCtxt {
+    ret: Option<Ty>,
+}
+
 
 #[derive(Debug, Clone)]
 pub struct LocalCtxt {
     bindings: HashMap<Identifier, Ty>,
-    ret_ty: Option<Ty>
 }
 impl LocalCtxt {
     pub fn new() -> Self {
         Self {
             bindings: HashMap::new(),
-            ret_ty: None
         }
     }
 

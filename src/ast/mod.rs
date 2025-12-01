@@ -9,7 +9,7 @@ pub struct NodeId(pub usize);
 impl_id!(NodeId);
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Identifier(String);
+pub struct Identifier(pub String);
 
 impl Display for Identifier {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -22,7 +22,7 @@ impl Display for Identifier {
 pub struct Expr {
     pub id: NodeId,
     pub kind: ExprKind,
-    pub span: Span,
+    // pub span: Span,
 }
 
 #[derive(Debug)]
@@ -35,7 +35,7 @@ pub enum ExprKind {
     UnaryOp(UOp, Box<Expr>),
     BinaryOp(BinOp, Box<Expr>, Box<Expr>),
     If(Box<Expr>, Box<Block>, Box<Block>),
-    Closure(Option<Identifier>, Vec<Expr>, Box<FuncBlock>),
+    Closure(Option<Identifier>, Vec<Identifier>, Box<FuncBlock>),
     Call(Box<Expr>, Vec<Expr>),
     Ref(Box<Expr>),
     Block(Box<Block>),
@@ -92,7 +92,7 @@ pub struct FuncBlock {
 pub struct Stmt {
     pub id: NodeId,
     pub kind: StmtKind,
-    pub span: Span,
+    // pub span: Span,
 }
 
 #[derive(Debug)]
