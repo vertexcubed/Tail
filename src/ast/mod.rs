@@ -1,3 +1,4 @@
+use std::fmt::{Display, Formatter};
 use crate::impl_id;
 
 pub mod visit;
@@ -7,8 +8,15 @@ pub mod visit;
 pub struct NodeId(pub usize);
 impl_id!(NodeId);
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Identifier;
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Identifier(String);
+
+impl Display for Identifier {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 
 #[derive(Debug)]
 pub struct Expr {
@@ -30,11 +38,9 @@ pub enum ExprKind {
     Closure(Option<Identifier>, Vec<Expr>, Box<FuncBlock>),
     Call(Box<Expr>, Vec<Expr>),
     Ref(Box<Expr>),
-    Deref(Box<Expr>),
     Block(Box<Block>),
-    Ret(Option<Box<Expr>>),
-    Struct(Box<StructExpr>),
-    Field(Box<Expr>, Identifier)
+    Struct(StructExpr),
+    Place(PlaceExpr)
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -92,8 +98,9 @@ pub struct Stmt {
 #[derive(Debug)]
 pub enum StmtKind {
     Let(Identifier, Box<Expr>),
-    Assign(Box<Expr>, Box<Expr>),
-    Expr(Box<Expr>)
+    Assign(PlaceExpr, Box<Expr>),
+    Expr(Box<Expr>),
+    Ret(Option<Box<Expr>>),
 }
 
 #[derive(Debug)]
@@ -102,6 +109,16 @@ pub struct StructExpr {
     pub name: Identifier,
     pub fields: Vec<ExprField>
 }
+
+#[derive(Debug)]
+pub struct PlaceExpr {
+    // in an assign operation, this should ALWAYS be an identifier
+    pub inner: Box<Expr>,
+    pub derefs: usize,
+    pub fields: Vec<Identifier>
+}
+
+
 
 #[derive(Debug)]
 pub struct ExprField {
