@@ -34,7 +34,8 @@ impl <'src> TailVirtualMachine<'src> {
         let mut code_chunk = self.call_stack.last().unwrap().code_chunk;
         while(ip < code_chunk.data.len()) {
             let mut next_ip = None;
-            println!("ip: {}, frame#: {}", ip, self.call_stack.len() - 1);
+
+            println!("{:?}", code_chunk[ip]);
 
             match &code_chunk[ip] {
                 Instruction::IPushM1 => self.push(StackValue::Int(-1)),
@@ -225,6 +226,11 @@ impl <'src> TailVirtualMachine<'src> {
                     // next_ip = Some(0);
                 }
                 Instruction::Ret => {
+                    // Close any possibly open upvalues
+                    for i in 0..self.call_stack.last().unwrap().slots.len() {
+                        self.clear_slot(i);
+                    }
+
                     let old_frame = self.pop_frame();
                     next_ip = Some(old_frame.return_address);
                 }
@@ -406,18 +412,8 @@ impl <'src> TailVirtualMachine<'src> {
                     };
                     self.push(to_push);
                 }
-                Instruction::Clear(slot) => 'clear: {
-                    // clears the slot and gives us the value that was there
-                    let Some(slot) = std::mem::replace(&mut self.call_stack.last_mut().unwrap().slots[*slot], None) else {
-                        break 'clear;
-                    };
-                    if !slot.is_captured() {
-                        break 'clear;
-                    }
-                    // this local was captured. close the upvalue
-                    let upvalue_index = slot.upvalue_slot().unwrap();
-                    let data: StackValue = slot.into();
-                    self.upvalues.close_upvalue(upvalue_index, data);
+                Instruction::Clear(slot) => {
+                    self.clear_slot(*slot);
                 }
             }
             if next_ip.is_none() {
@@ -426,9 +422,9 @@ impl <'src> TailVirtualMachine<'src> {
             ip = next_ip.unwrap();
             code_chunk = self.call_stack.last().unwrap().code_chunk;
         }
+        println!("Op Stack: {:?}", self.op_stack);
         println!("Heap: {:?}", self.heap);
         println!("Call Stack: {:?}", self.call_stack);
-        println!("Op Stack: {:?}", self.op_stack);
     }
     
     fn read_as_int(&self, value: &StackValue) -> i64 {
@@ -528,6 +524,19 @@ impl <'src> TailVirtualMachine<'src> {
        self.call_stack.last().unwrap().upvalues[index]
     }
 
+    fn clear_slot(&mut self, index: usize) {
+        // clears the slot and gives us the value that was there
+        let Some(slot) = std::mem::replace(&mut self.call_stack.last_mut().unwrap().slots[index], None) else {
+            return;
+        };
+        if !slot.is_captured() {
+            return;
+        }
+        // this local was captured. close the upvalue
+        let upvalue_index = slot.upvalue_slot().unwrap();
+        let data: StackValue = slot.into();
+        self.upvalues.close_upvalue(upvalue_index, data);
+    }
 
     /// get or create an upvalue for a local variable. If it already exists, we return the index instead of making a new one.
     fn get_or_create_upvalue(&mut self, slot: usize) -> usize {

@@ -1,3 +1,4 @@
+use std::fmt::{Display, Formatter};
 use std::ops::{Deref, DerefMut, Index, IndexMut};
 use std::rc::Rc;
 use crate::vm::def::{CaptureDef, FunctionDef, StackLoc, StructDef};

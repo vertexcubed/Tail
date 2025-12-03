@@ -389,7 +389,7 @@ fn test_ast() {
 }
 
 
-fn vm_tests() {
+fn basic_upvalues() {
 
     let constant_pool = vec![
         ConstantPoolEntry::FunctionDef(Rc::new(FunctionDef {
@@ -504,6 +504,97 @@ fn vm_tests() {
     vm.run();
 }
 
+fn complex_upvalues() {
+
+    let constants = vec![
+        ConstantPoolEntry::FunctionDef(Rc::new(FunctionDef {
+            arity: 0,
+            code_chunk: 0,
+        })),
+        ConstantPoolEntry::FunctionDef(Rc::new(FunctionDef {
+            arity: 0,
+            code_chunk: 1,
+        })),
+    ];
+
+
+    let make = CodeChunk::new(vec![
+        IPush2,
+        Store1,
+
+        ClosPush(1, vec![CaptureDef::local(1)]),
+        Ret
+    ]);
+
+    let inner = CodeChunk::new(vec![
+        IPush1,
+        UpLoad(0),
+        IAdd,
+        UpStore(0),
+        UpLoad(0),
+        Ret,
+    ]);
+
+
+    let main = CodeChunk::new(vec![
+        // let make() = {...}
+        ClosPush(0, vec![]),
+        GStore0,
+        // let a = make()
+        GLoad0,
+        Call,
+        GStore1,
+        // let b = make()
+        GLoad0,
+        Call,
+        GStore2,
+
+        //a()
+        GLoad1,
+        Call,
+        //a()
+        GLoad1,
+        Call,
+
+        // b()
+        GLoad2,
+        Call,
+        // b()
+        GLoad2,
+        Call,
+        // b()
+        GLoad2,
+        Call,
+        //a()
+        GLoad1,
+        Call,
+        // b()
+        GLoad2,
+        Call,
+        //a()
+        GLoad1,
+        Call,
+        // b()
+        GLoad2,
+        Call,
+    ]);
+
+    let file = SourceFile {
+        constant_pool: constants,
+        main_code: main,
+        functions: vec![
+            make,
+            inner,
+        ]
+    };
+
+    let mut vm = TailVirtualMachine::new(&file);
+    vm.run();
+}
+
+
+
+
 fn main() {
-    vm_tests();
+    complex_upvalues();
 }
