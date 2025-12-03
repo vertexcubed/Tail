@@ -147,14 +147,13 @@ impl AstVisitor for Compiler {
                 // TODO: global load/store instr
 
 
-
                 // if current scope < scope, pop it off until its not. we're not in that scope anymore.
                 while self.scope_level < loc.peek().1 {
                     loc.pop();
                 }
                 let (slot, scope) = loc.peek();
                 if self.scope_level > scope {
-                    // TODO: upvalues
+                    // TODO: upvalues- WAIT NO THIS ONLY APPLIES OUTSIDE OF THE FUNCTION SCOPE FUCKING HELL
                 }
                 else {
                     let instr = match slot {

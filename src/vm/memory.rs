@@ -1,4 +1,6 @@
-use crate::vm::{StackValue};
+use std::collections::HashMap;
+use crate::vm::{StackValue, UpValue};
+use crate::vm::def::StackLoc;
 
 pub type MemoryAddress = usize;
 
@@ -33,5 +35,52 @@ impl  Heap {
 
     pub fn write(&mut self, index: MemoryAddress, value: StackValue) {
         self.values[index] = value;
+    }
+}
+
+
+
+pub struct UpValueStorage {
+    upvalues: Vec<UpValue>,
+    open_upvalues: HashMap<StackLoc, usize>
+}
+impl UpValueStorage {
+    pub fn new() -> Self {
+        Self {
+            upvalues :Vec::new(),
+            open_upvalues: HashMap::new()
+        }
+    }
+
+    pub fn push_open_upvalue(&mut self, loc: StackLoc) -> usize {
+        let idx = self.upvalues.len();
+        let value = UpValue::Open(loc);
+        self.upvalues.push(value);
+        self.open_upvalues.insert(loc, idx);
+        idx
+    }
+
+    pub fn get_open_upvalue_idx(&self, loc: &StackLoc) -> Option<usize> {
+        self.open_upvalues.get(loc).cloned()
+    }
+
+    pub fn get(&self, index: usize) -> &UpValue {
+        &self.upvalues[index]
+    }
+
+    pub fn get_mut(&mut self, index: usize) -> &mut UpValue {
+        &mut self.upvalues[index]
+    }
+
+    pub fn close_upvalue(&mut self, index: usize, value: StackValue) {
+        match &self.upvalues[index] {
+            UpValue::Open(loc) => {
+                self.open_upvalues.remove(loc);
+            }
+            UpValue::Closed(_) => {
+                panic!("Cannot close an already closed upvalue!")
+            }
+        }
+        self.upvalues[index] = UpValue::Closed(value);
     }
 }

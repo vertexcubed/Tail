@@ -1,11 +1,11 @@
-use std::ops::{Index, IndexMut};
+use std::ops::{Deref, DerefMut, Index, IndexMut};
 use std::rc::Rc;
-use crate::vm::def::StructDef;
+use crate::vm::def::{CaptureDef, FunctionDef, StackLoc, StructDef};
 use crate::vm::memory::MemoryAddress;
 
 pub mod vm;
-mod memory;
-mod def;
+pub mod memory;
+pub mod def;
 
 #[derive(Debug, Clone)]
 pub enum StackValue {
@@ -14,7 +14,8 @@ pub enum StackValue {
     Char(char),
     Struct(StructValue),
     Ref(MemoryAddress),
-    Function(u8, Rc<CodeChunk>),
+    // index in constant pool of FunctionDef, followed by indices of upvalues
+    Closure(usize, Vec<usize>),
 }
 #[derive(Debug, Clone)]
 pub struct StructValue {
@@ -42,6 +43,12 @@ impl  StructValue {
     }
 }
 
+// a reference to a captured value
+#[derive(Debug, Clone)]
+pub enum UpValue {
+    Open(StackLoc),
+    Closed(StackValue)
+}
 
 
 #[derive(Debug, Clone)]
@@ -72,28 +79,32 @@ pub type TypeIdentifier = String;
 
 
 #[derive(Debug)]
-pub struct StackFrame {
-    slots: Vec<Option<StackValue>>,
+pub struct StackFrame<'src> {
+    slots: Vec<Option<StackSlot>>,
     return_address: Address,
     is_base: bool,
-    code_chunk: Rc<CodeChunk>,
+    // vector of upvalue indices
+    upvalues: Vec<usize>,
+    code_chunk: &'src CodeChunk,
 }
-impl StackFrame {
-    pub fn base(code_chunk: Rc<CodeChunk>) -> Self {
+impl <'src> StackFrame<'src> {
+    pub fn base(code_chunk: &'src CodeChunk) -> Self {
         Self {
             slots: vec![None; 8],
             return_address: 0,
             is_base: true,
+            upvalues: Vec::new(),
             code_chunk,
         }
     }
 
-    pub fn new(code_chunk: Rc<CodeChunk>, return_address: Address) -> Self {
+    pub fn new(code_chunk: &'src CodeChunk, return_address: Address, upvalues: Vec<usize>) -> Self {
         Self {
             slots: vec![None; 8],
             return_address,
             is_base: false,
             code_chunk,
+            upvalues,
         }
     }
 
@@ -106,12 +117,71 @@ impl StackFrame {
     }
 
     pub fn load(&self, index: usize) -> StackValue {
-        self.slots[index].clone().unwrap()
+        (**self.slots[index].as_ref().unwrap()).clone()
     }
 
     pub fn store(&mut self, index: usize, value: StackValue) {
         self.resize_if_needed(index);
-        self.slots[index] = Some(value);
+        match &mut self.slots[index] {
+            None => {
+                self.slots[index] = Some(StackSlot::new(value))
+            }
+            Some(slot) => {
+                **slot = value;
+            }
+        }
+        // self.slots[index] = Some(value);
+    }
+
+    pub fn get_upvalue_idx(&self, index: usize) -> usize {
+        self.upvalues[index]
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct StackSlot {
+    // if this is captured, this is the upvalue index its captured at
+    captured: Option<usize>,
+    data: StackValue,
+}
+impl StackSlot {
+    pub fn new(data: StackValue) -> Self {
+        Self {
+            captured: None,
+            data,
+        }
+    }
+
+    pub fn set_captured(&mut self, upvalue: usize) {
+        if self.captured.is_some() {
+            panic!("Can't capture stack slot twice!");
+        }
+        self.captured = Some(upvalue);
+    }
+
+    pub fn is_captured(&self) -> bool {
+        self.captured.is_some()
+    }
+    pub fn upvalue_slot(&self) -> Option<usize> {
+        self.captured.clone()
+    }
+}
+impl Deref for StackSlot {
+    type Target = StackValue;
+
+    fn deref(&self) -> &Self::Target {
+        &self.data
+    }
+}
+impl DerefMut for StackSlot {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.data
+    }
+}
+
+impl Into<StackValue> for StackSlot {
+    fn into(self) -> StackValue {
+        self.data
     }
 }
 
@@ -122,6 +192,7 @@ pub enum ConstantPoolEntry {
     CharLit(char),
     StringLit(String),
     StructDef(Rc<StructDef>),
+    FunctionDef(Rc<FunctionDef>),
     // Subject to change
     Identifier(Identifier),
 }
@@ -133,6 +204,13 @@ impl  ConstantPoolEntry {
             ConstantPoolEntry::CharLit(c) => StackValue::Char(*c),
             ConstantPoolEntry::StringLit(s) => todo!(),
             _ => panic!("Can't load non value as a stack value!"),
+        }
+    }
+
+    pub fn as_func_def(&self) -> Rc<FunctionDef> {
+        match self {
+            ConstantPoolEntry::FunctionDef(f) => f.clone(),
+            _ => panic!("Can't load non-function def as function def!")
         }
     }
     pub fn as_struct_def(&self) -> Rc<StructDef> {
@@ -151,10 +229,20 @@ impl  ConstantPoolEntry {
 }
 
 
+pub struct SourceFile {
+    pub constant_pool: Vec<ConstantPoolEntry>,
+    pub main_code: CodeChunk,
+    pub functions: Vec<CodeChunk>,
+}
+impl SourceFile {
+    pub fn get_func_code(&self, def: &FunctionDef) -> &CodeChunk {
+        &self.functions[def.code_chunk]
+    }
 
-
-
-
+    pub fn get_main_code(&self) -> &CodeChunk {
+        &self.main_code
+    }
+}
 
 
 
@@ -205,6 +293,32 @@ pub enum Instruction {
     Load3,
     /// Loads the value from stack frame memory slot n onto the stack
     Load(usize),
+    /// Stores the top value on the stack into global slot 0
+    GStore0,
+    /// Stores the top value on the stack into global slot 1
+    GStore1,
+    /// Stores the top value on the stack into global slot 2
+    GStore2,
+    /// Stores the top value on the stack into global slot 3
+    GStore3,
+    /// Stores the top value on the stack into global slot n
+    GStore(usize),
+    /// Loads the value from global slot 0 onto the stack
+    GLoad0,
+    /// Loads the value from global slot 1 onto the stack
+    GLoad1,
+    /// Loads the value from global slot 2 onto the stack
+    GLoad2,
+    /// Loads the value from global slot 3 onto the stack
+    GLoad3,
+    /// Loads the value from global slot n onto the stack
+    GLoad(usize),
+    /// Stores the top value on the stack into upvalue slot n
+    UpStore(usize),
+    /// Loads the value from upvalue slot n onto the stack
+    UpLoad(usize),
+    /// Clear the local in stack frame memory slot n. If this value is captured, it closes the upvalue as well.
+    Clear(usize),
     /// Allocates the top value on the stack into the heap and pushes a pointer to it back on
     Alloc,
     /// Pops the pointer on the stack and derefs, copying and pushing its value
@@ -246,6 +360,8 @@ pub enum Instruction {
     JEq(u16),
     /// Jumps if top value is not 0
     JNe(u16),
+    /// makes a closure given the index into the constant pool for a function def, and a list of locals to capture
+    ClosPush(usize, Vec<CaptureDef>),
     Call,
     Ret,
 }

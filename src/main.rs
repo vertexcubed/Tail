@@ -1,5 +1,5 @@
 use std::rc::Rc;
-use crate::vm::{CodeChunk, StackValue};
+use crate::vm::{CodeChunk, ConstantPoolEntry, SourceFile, StackValue};
 use crate::vm::Instruction::*;
 use crate::vm::vm::TailVirtualMachine;
 
@@ -77,8 +77,9 @@ use crate::ast::{BinOp, Block, Expr, ExprKind, FuncBlock, Literal, NodeId, Place
 use crate::ast::visit::AstVisitor;
 use crate::compile::visit::Compiler;
 use crate::ty::visit::TypeVisitor;
+use crate::vm::def::{CaptureDef, FunctionDef};
 
-fn main() {
+fn test_ast() {
 
     let expr = Expr {
         id: NodeId(0),
@@ -377,35 +378,132 @@ fn main() {
     }
     let code_chunk = compile_code.current_chunk.build();
     println!("{:?}", code_chunk);
-    let mut vm = TailVirtualMachine::new();
+    let source_file = SourceFile {
+        constant_pool: Vec::new(),
+        main_code: code_chunk,
+        functions: Vec::new(),
+    };
 
-    vm.run(Rc::new(code_chunk));
-    // let other_code = CodeChunk::new(vec![
-    //     Load1,
-    //     IPush(24),
-    //     IMul,
-    //     Ret,
-    // ]);
-    //
-    // let other = StackValue::Function(1, &other_code);
+    let mut vm = TailVirtualMachine::new(&source_file);
+    vm.run();
+}
 
-    // let other_idx = vm.add_to_constant_pool(other);
 
-    // let func_code = CodeChunk::new(vec![
-    //     Load1,
-    //     Ldc(other_idx),
-    //     Call,
-    //     Load2,
-    //     IAdd,
-    //     Ret,
-    // ]);
-    // let func = StackValue::Function(2, &func_code);
+fn vm_tests() {
 
-    // let func_idx = vm.add_to_constant_pool(func);
+    let constant_pool = vec![
+        ConstantPoolEntry::FunctionDef(Rc::new(FunctionDef {
+            arity: 0,
+            code_chunk: 0
+        })),
+        ConstantPoolEntry::FunctionDef(Rc::new(FunctionDef {
+            arity: 0,
+            code_chunk: 1
+        })),
+        ConstantPoolEntry::FunctionDef(Rc::new(FunctionDef {
+            arity: 0,
+            code_chunk: 2
+        }))
+    ];
 
-    // let a = 2
-    // let b = 3
-    // let c = b - a
+    let empty = CodeChunk::new(vec![
+        Ret
+    ]);
 
-    // func_code lives at least as long as the vm
+    let main = CodeChunk::new(vec![
+        // let foo = fun() -> {panic!()}
+        ClosPush(0, vec![]),
+        GStore0,
+        // let bar = fun() -> {panic!()}
+        ClosPush(0, vec![]),
+        GStore1,
+
+        // let a = 2
+        IPush2,
+        GStore0,
+
+        // { ...
+        // let b = 4
+        IPush4,
+        Store0,
+        // let a = 3
+        IPush3,
+        Store1,
+        ClosPush(1, vec![CaptureDef::local(1)]),
+        GStore0,
+        ClosPush(2, vec![CaptureDef::local(1)]),
+        GStore1,
+
+        // ... }
+        Clear(0),
+        Clear(1),
+
+        // { ...
+        // let a = 20
+        IPush(20),
+        Store0,
+        // foo()
+        GLoad0,
+        Call,
+        // foo()
+        GLoad0,
+        Call,
+        // bar()
+        GLoad1,
+        Call,
+        // foo()
+        GLoad0,
+        Call,
+        // bar()
+        GLoad1,
+        Call,
+        // bar()
+        GLoad1,
+        Call,
+        // bar()
+        GLoad1,
+        Call,
+        // bar()
+        GLoad1,
+        Call,
+
+        // ... }
+        Clear(0)
+    ]);
+
+    let foo = CodeChunk::new(vec![
+        IPush4,
+        UpLoad(0),
+        IAdd,
+        UpStore(0),
+        UpLoad(0),
+        Ret,
+    ]);
+
+    let bar = CodeChunk::new(vec![
+        IPush2,
+        UpLoad(0),
+        ISub,
+        UpStore(0),
+        UpLoad(0),
+        Ret
+    ]);
+
+
+    let source = SourceFile {
+        constant_pool,
+        main_code: main,
+        functions: vec![
+            empty,
+            foo,
+            bar
+        ]
+    };
+
+    let mut vm = TailVirtualMachine::new(&source);
+    vm.run();
+}
+
+fn main() {
+    vm_tests();
 }
