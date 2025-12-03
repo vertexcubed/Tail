@@ -42,7 +42,7 @@ impl TailVirtualMachine {
                 Instruction::IPush3 => self.push(StackValue::Int(3)),
                 Instruction::IPush4 => self.push(StackValue::Int(4)),
                 Instruction::IPush5 => self.push(StackValue::Int(5)),
-                Instruction::IPush(value) => self.push(StackValue::Int(value)),
+                Instruction::IPush(value) => self.push(StackValue::Int(value as i64)),
                 Instruction::Ldc(index) => {
                     let value = self.load_constant(index).as_stack_value();
                     self.push(value);
@@ -119,6 +119,22 @@ impl TailVirtualMachine {
                     }
                     self.push(StackValue::Int(first / second))
                 }
+                Instruction::IMod => {
+                    let value = self.pop();
+                    let first = self.read_as_int(&value);
+                    let value = self.pop();
+                    let second = self.read_as_int(&value);
+                    if second == 0 {
+                        //error here. TODO
+                        error!("Divide by 0");
+                    }
+                    self.push(StackValue::Int(first % second));
+                }
+                Instruction::INeg => {
+                    let value = self.pop();
+                    let num = self.read_as_int(&value);
+                    self.push(StackValue::Int(-num));
+                }
                 Instruction::Swap => {
                     let last = self.op_stack.len() - 1;
                     let temp = self.op_stack[last].clone();
@@ -137,26 +153,6 @@ impl TailVirtualMachine {
                     let value = self.pop();
                     let to_test = self.read_as_int(&value);
                     if to_test != 0 { next_ip = Some(index as usize); }
-                }
-                Instruction::JLt(index) => {
-                    let value = self.pop();
-                    let to_test = self.read_as_int(&value);
-                    if to_test < 0 { next_ip = Some(index as usize); }
-                }
-                Instruction::JGt(index) => {
-                    let value = self.pop();
-                    let to_test = self.read_as_int(&value);
-                    if to_test > 0 { next_ip = Some(index as usize); }
-                }
-                Instruction::JLe(index) => {
-                    let value = self.pop();
-                    let to_test = self.read_as_int(&value);
-                    if to_test <= 0 { next_ip = Some(index as usize); }
-                }
-                Instruction::JGe(index) => {
-                    let value = self.pop();
-                    let to_test = self.read_as_int(&value);
-                    if to_test >= 0 { next_ip = Some(index as usize); }
                 }
                 Instruction::Call => {
                     let StackValue::Function(arity, chunk) = self.pop() else {
@@ -253,6 +249,68 @@ impl TailVirtualMachine {
                     let value = self.peek().clone();
                     self.push(value);
                 }
+                Instruction::Eq => {
+                    let value = self.pop();
+                    let to_test = self.read_as_int(&value);
+                    if to_test == 0 {
+                        self.push(StackValue::Int(1));
+                    }
+                    else {
+                        self.push(StackValue::Int(0));
+                    }
+                }
+                Instruction::NEq => {
+                    let value = self.pop();
+                    let to_test = self.read_as_int(&value);
+                    if to_test != 0 {
+                        self.push(StackValue::Int(1));
+                    }
+                    else {
+                        self.push(StackValue::Int(0));
+                    }
+                }
+                Instruction::Lt => {
+                    let value = self.pop();
+                    let to_test = self.read_as_int(&value);
+                    if to_test < 0 {
+                        self.push(StackValue::Int(1));
+                    }
+                    else {
+                        self.push(StackValue::Int(0));
+                    }
+                }
+                Instruction::Lte => {
+                    let value = self.pop();
+                    let to_test = self.read_as_int(&value);
+                    if to_test <= 0 {
+                        self.push(StackValue::Int(1));
+                    }
+                    else {
+                        self.push(StackValue::Int(0));
+                    }
+                }
+                Instruction::Gt => {
+                    let value = self.pop();
+                    let to_test = self.read_as_int(&value);
+                    if to_test > 0 {
+                        self.push(StackValue::Int(1));
+                    }
+                    else {
+                        self.push(StackValue::Int(0));
+                    }
+                }
+                Instruction::Gte => {
+                    let value = self.pop();
+                    let to_test = self.read_as_int(&value);
+                    if to_test >= 0 {
+                        self.push(StackValue::Int(1));
+                    }
+                    else {
+                        self.push(StackValue::Int(0));
+                    }
+                }
+                Instruction::BitAnd => {}
+                Instruction::BitOr => {}
             }
             if next_ip.is_none() {
                 next_ip = Some(ip + 1);

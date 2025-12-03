@@ -6,7 +6,8 @@ use crate::vm::vm::TailVirtualMachine;
 mod vm;
 mod ast;
 mod ty;
-
+mod parse;
+mod compile;
 
 macro_rules! impl_id {
     ($typ:ty) => {
@@ -74,6 +75,7 @@ macro_rules! impl_id {
 pub(crate) use impl_id;
 use crate::ast::{BinOp, Block, Expr, ExprKind, FuncBlock, Literal, NodeId, PlaceExpr, Span, Stmt, StmtKind};
 use crate::ast::visit::AstVisitor;
+use crate::compile::visit::Compiler;
 use crate::ty::visit::TypeVisitor;
 
 fn main() {
@@ -312,8 +314,72 @@ fn main() {
 
 
 
+
+
+
+    let to_compile = vec![
+        Stmt {
+            id: NodeId(0),
+            kind: StmtKind::Let(
+                ast::Identifier("x".to_string()),
+                Box::new(Expr {
+                    id: NodeId(1),
+                    kind: ExprKind::Lit(Literal::Int(2))
+                })
+            )
+        },
+        Stmt {
+            id: NodeId(2),
+            kind: StmtKind::Let(
+                ast::Identifier("y".to_string()),
+                Box::new(Expr {
+                    id: NodeId(3),
+                    kind: ExprKind::Lit(Literal::Int(1))
+                })
+            )
+        },
+        Stmt {
+            id: NodeId(4),
+            kind: StmtKind::Let(
+                ast::Identifier("z".to_string()),
+                Box::new(Expr {
+                    id: NodeId(5),
+                    kind: ExprKind::BinaryOp(
+                        BinOp::Sub,
+                        Box::new(Expr {
+                            id: NodeId(6),
+                            kind: ExprKind::Ident(ast::Identifier("y".to_string())),
+                        }),
+                        Box::new(Expr {
+                            id: NodeId(7),
+                            kind: ExprKind::Ident(ast::Identifier("x".to_string()))
+                        })
+                    )
+                })
+            )
+        },
+    ];
+
+
+    let mut compile_types = TypeVisitor::new();
+    for s in to_compile.iter() {
+        if let Err(e) = compile_types.visit_stmt(s){
+            println!("{}", e);
+            return;
+        }
+    }
+
+    let mut compile_code = Compiler::new();
+    for s in to_compile.iter() {
+        if let Err(e) = compile_code.visit_stmt(s) {
+            println!("Something borke")
+        }
+    }
+    let code_chunk = compile_code.current_chunk.build();
+    println!("{:?}", code_chunk);
     let mut vm = TailVirtualMachine::new();
 
+    vm.run(Rc::new(code_chunk));
     // let other_code = CodeChunk::new(vec![
     //     Load1,
     //     IPush(24),
@@ -340,21 +406,6 @@ fn main() {
     // let a = 2
     // let b = 3
     // let c = b - a
-
-
-    let instrs = vec![
-        IPush2,
-        Store0,
-        IPush3,
-        Store1,
-        Load0,
-        Load1,
-        ISub,
-        Store2
-    ];
-    let chunk = CodeChunk::new(instrs);
-
-    vm.run(Rc::new(chunk));
 
     // func_code lives at least as long as the vm
 }

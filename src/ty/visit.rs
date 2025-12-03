@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use crate::ast::{BinOp, Block, Expr, ExprKind, FuncBlock, Identifier, Literal, NodeId, Stmt, StmtKind};
+use crate::ast::{BinOp, Block, Expr, ExprKind, FuncBlock, Identifier, Literal, NodeId, Stmt, StmtKind, UOp};
 use crate::ast::visit::AstVisitor;
 use crate::ty::{Ty, TyCtxt, TyError};
 
@@ -50,6 +50,8 @@ impl AstVisitor for TypeVisitor {
                 Ok(self.ctxt.common_types.unit.clone())
             }
             StmtKind::Assign(place, body) => {
+                // TODO: derefs, struct field lookup
+                
                 let ExprKind::Ident(iden) = &place.inner.kind else {
                     unreachable!("Parser should prevent this from happening")
                 };
@@ -93,7 +95,20 @@ impl AstVisitor for TypeVisitor {
                 Ok(id_ty)
             }
             ExprKind::UnaryOp(uop, e) => {
-                todo!()
+                match uop {
+                    UOp::Not => {
+                        let operand = self.visit_expr(e)?;
+                        self.ctxt.unify(&operand, &self.ctxt.common_types.bool.clone())?;
+                        self.set_type_of_expr(expr.id, operand.clone());
+                        Ok(operand)
+                    }
+                    UOp::Neg => {
+                        let operand = self.visit_expr(e)?;
+                        self.ctxt.unify(&operand, &self.ctxt.common_types.int.clone())?;
+                        self.set_type_of_expr(expr.id, operand.clone());
+                        Ok(operand)
+                    }
+                }
             },
             ExprKind::BinaryOp(bop, left, right) => {
                 let (arg, ret) = self.bop_types(*bop);
@@ -177,7 +192,18 @@ impl AstVisitor for TypeVisitor {
                     Ok(ret)
                 }
             }
-            ExprKind::Place(_) => todo!(),
+            ExprKind::Place(place) => {
+                // TODO: Struct lookups
+                let first = self.ctxt.new_type_var();
+                let mut ty = first.clone();
+                for _ in 0..place.derefs {
+                    ty = self.ctxt.new_ref_ty(ty);
+                }
+                let inner = self.visit_expr(&place.inner)?;
+                self.ctxt.unify(&inner, &ty)?;
+                self.set_type_of_expr(expr.id, first.clone());
+                Ok(first)
+            },
         }
     }
     fn visit_ident(&mut self, ident: &Identifier) -> Self::ExprResult {

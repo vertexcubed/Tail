@@ -178,7 +178,7 @@ pub enum Instruction {
     /// Pushes the int value 5 onto the stack.
     IPush5,
     /// Pushes the int value provided onto the stack.
-    IPush(i64),
+    IPush(u16),
     /// Pops the top value off the stack and discards
     Pop,
     /// Duplicates the top value on the stack
@@ -204,7 +204,7 @@ pub enum Instruction {
     /// Loads the value from stack frame memory slot 3 onto the stack
     Load3,
     /// Loads the value from stack frame memory slot n onto the stack
-    Load(u8),
+    Load(usize),
     /// Allocates the top value on the stack into the heap and pushes a pointer to it back on
     Alloc,
     /// Pops the pointer on the stack and derefs, copying and pushing its value
@@ -225,14 +225,27 @@ pub enum Instruction {
     ISub,
     IMul,
     IDiv,
+    IMod,
+    INeg,
+    // returns 1 if top value = 0
+    Eq,
+    // returns 1 if top value != 0
+    NEq,
+    // returns 1 if top value < 0
+    Lt,
+    // etc
+    Lte,
+    Gt,
+    Gte,
+    BitAnd,
+    BitOr,
     Swap,
+    /// Unconditional jump
     Jump(u16),
+    /// Jumps if top value is 0
     JEq(u16),
+    /// Jumps if top value is not 0
     JNe(u16),
-    JLt(u16),
-    JGt(u16),
-    JLe(u16),
-    JGe(u16),
     Call,
     Ret,
 }
