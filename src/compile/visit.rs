@@ -144,6 +144,10 @@ impl AstVisitor for Compiler {
             ExprKind::Ident(id) => {
                 let loc = self.frame_variable_slots.get_mut(id).unwrap();
 
+                // TODO: global load/store instr
+
+
+
                 // if current scope < scope, pop it off until its not. we're not in that scope anymore.
                 while self.scope_level < loc.peek().1 {
                     loc.pop();
@@ -183,7 +187,29 @@ impl AstVisitor for Compiler {
                 self.visit_expr(left)?;
                 self.push_bop_instr(bop)
             },
-            ExprKind::If(_, _, _) => todo!(),
+            ExprKind::If(cond, then_branch, else_branch) => {
+                self.visit_expr(cond)?;
+                // this is used to later write the correct jump address
+                let cond_jump_ip = self.current_chunk.current_ip();
+                self.current_chunk.push_instr(Instruction::JEq(0)); // temp address
+
+                // compile then branch
+                self.visit_block(then_branch)?;
+                // also used later to write the correct jump address
+                let finish_jump_ip = self.current_chunk.current_ip();
+                self.current_chunk.push_instr(Instruction::Jump(0)); // temp address
+                // compile else branch
+                self.visit_block(else_branch)?;
+
+                let end_if_ip = self.current_chunk.current_ip();
+
+                // finish_jump_ip + 1 = start of else branch
+                *self.current_chunk.get_instr_mut(cond_jump_ip) = Instruction::JEq((finish_jump_ip + 1) as u16);
+                // end_if_ip = end of the if statement
+                *self.current_chunk.get_instr_mut(finish_jump_ip) = Instruction::Jump(end_if_ip as u16);
+
+                Ok(())
+            },
             ExprKind::Closure(_, _, _) => todo!(),
             ExprKind::Call(_, _) => todo!(),
             ExprKind::Ref(e) => {
@@ -191,7 +217,9 @@ impl AstVisitor for Compiler {
                 self.current_chunk.push_instr(Instruction::Alloc);
                 Ok(())
             },
-            ExprKind::Block(_) => todo!(),
+            ExprKind::Block(block) => {
+                self.visit_block(block)
+            },
             ExprKind::Struct(_) => todo!(),
             ExprKind::Place(_) => todo!(),
         }

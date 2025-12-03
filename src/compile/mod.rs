@@ -33,6 +33,22 @@ impl CodeChunkBuilder {
         self
     }
 
+    pub fn current_ip(&self) -> usize {
+        self.data.len()
+    }
+
+    pub fn set(&mut self, ip: usize, instruction: Instruction) -> &mut Self {
+        self.data[ip] = instruction;
+        self
+    }
+
+    pub fn get_instr(&self, ip: usize) -> &Instruction {
+        &self.data[ip]
+    }
+    pub fn get_instr_mut(&mut self, ip: usize) -> &mut Instruction {
+        &mut self.data[ip]
+    }
+
     pub fn build(&mut self) -> CodeChunk {
         let data = std::mem::replace(&mut self.data, Vec::new());
         CodeChunk {
