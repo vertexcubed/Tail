@@ -75,7 +75,7 @@ macro_rules! impl_id {
 pub(crate) use impl_id;
 use crate::ast::{BinOp, Block, Expr, ExprKind, FuncBlock, Literal, NodeId, PlaceExpr, Span, Stmt, StmtKind};
 use crate::ast::visit::AstVisitor;
-use crate::compile::visit::Compiler;
+use crate::compile::visit::{Compiler, FrameCompiler};
 use crate::ty::visit::TypeVisitor;
 use crate::vm::def::{CaptureDef, FunctionDef};
 
@@ -372,11 +372,11 @@ fn test_ast() {
 
     let mut compile_code = Compiler::new();
     for s in to_compile.iter() {
-        if let Err(e) = compile_code.visit_stmt(s) {
+        if let Err(e) = compile_code.root.visit_stmt(s) {
             println!("Something borke")
         }
     }
-    let code_chunk = compile_code.current_chunk.build();
+    let code_chunk = compile_code.root.chunk.build();
     println!("{:?}", code_chunk);
     let source_file = SourceFile {
         constant_pool: Vec::new(),
@@ -435,8 +435,8 @@ fn basic_upvalues() {
         GStore1,
 
         // ... }
-        Clear(0),
-        Clear(1),
+        // Clear(0),
+        // Clear(1),
 
         // { ...
         // let a = 20
@@ -468,7 +468,7 @@ fn basic_upvalues() {
         Call,
 
         // ... }
-        Clear(0)
+        // Clear(0)
     ]);
 
     let foo = CodeChunk::new(vec![
@@ -523,6 +523,8 @@ fn complex_upvalues() {
         Store1,
 
         ClosPush(1, vec![CaptureDef::local(1)]),
+        Store2,
+        Load2,
         Ret
     ]);
 

@@ -227,11 +227,11 @@ impl <'src> TailVirtualMachine<'src> {
                 }
                 Instruction::Ret => {
                     // Close any possibly open upvalues
-                    for i in 0..self.call_stack.last().unwrap().slots.len() {
-                        self.clear_slot(i);
+                    let mut old_frame = self.pop_frame();
+                    for i in 0..old_frame.slots.len() {
+                        self.clear_slot(&mut old_frame, i);
                     }
 
-                    let old_frame = self.pop_frame();
                     next_ip = Some(old_frame.return_address);
                 }
                 Instruction::Struct(index) => {
@@ -412,9 +412,6 @@ impl <'src> TailVirtualMachine<'src> {
                     };
                     self.push(to_push);
                 }
-                Instruction::Clear(slot) => {
-                    self.clear_slot(*slot);
-                }
             }
             if next_ip.is_none() {
                 next_ip = Some(ip + 1);
@@ -524,9 +521,9 @@ impl <'src> TailVirtualMachine<'src> {
        self.call_stack.last().unwrap().upvalues[index]
     }
 
-    fn clear_slot(&mut self, index: usize) {
+    fn clear_slot(&mut self, frame: &mut StackFrame, index: usize) {
         // clears the slot and gives us the value that was there
-        let Some(slot) = std::mem::replace(&mut self.call_stack.last_mut().unwrap().slots[index], None) else {
+        let Some(slot) = std::mem::replace(&mut frame.slots[index], None) else {
             return;
         };
         if !slot.is_captured() {

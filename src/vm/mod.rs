@@ -318,8 +318,6 @@ pub enum Instruction {
     UpStore(usize),
     /// Loads the value from upvalue slot n onto the stack
     UpLoad(usize),
-    /// Clear the local in stack frame memory slot n. If this value is captured, it closes the upvalue as well.
-    Clear(usize),
     /// Allocates the top value on the stack into the heap and pushes a pointer to it back on
     Alloc,
     /// Pops the pointer on the stack and derefs, copying and pushing its value
