@@ -76,6 +76,7 @@ pub(crate) use impl_id;
 use crate::ast::{BinOp, Block, Expr, ExprKind, FuncBlock, Literal, NodeId, PlaceExpr, Span, Stmt, StmtKind};
 use crate::ast::visit::AstVisitor;
 use crate::compile::visit::{Compiler, FrameCompiler};
+use crate::ty::{Ty, TyError};
 use crate::ty::visit::TypeVisitor;
 use crate::vm::def::{CaptureDef, FunctionDef};
 
@@ -372,11 +373,11 @@ fn test_ast() {
 
     let mut compile_code = Compiler::new();
     for s in to_compile.iter() {
-        if let Err(e) = compile_code.root.visit_stmt(s) {
+        if let Err(e) = compile_code.visit_stmt(s) {
             println!("Something borke")
         }
     }
-    let code_chunk = compile_code.root.chunk.build();
+    let code_chunk = compile_code.current_frame.chunk.build();
     println!("{:?}", code_chunk);
     let source_file = SourceFile {
         constant_pool: Vec::new(),
@@ -594,9 +595,122 @@ fn complex_upvalues() {
     vm.run();
 }
 
+fn if_test() {
+    let code = vec![
+        Stmt {
+            id: NodeId(0),
+            kind: StmtKind::Let(
+                ast::Identifier("x".to_string()),
+                Box::new(Expr {
+                    id: NodeId(1),
+                    kind: ExprKind::Lit(Literal::Int(32))
+                })
+            )
+        },
+        Stmt {
+            id: NodeId(2),
+            kind: StmtKind::Let(
+                ast::Identifier("y".to_string()),
+                Box::new(Expr {
+                    id: NodeId(3),
+                    kind: ExprKind::If(
+                        Box::new(Expr {
+                            id: NodeId(4),
+                            kind: ExprKind::BinaryOp(
+                                BinOp::Lt,
+                                Box::new(Expr {
+                                    id: NodeId(5),
+                                    kind: ExprKind::Ident(ast::Identifier("x".to_string()))
+                                }),
+                                Box::new(Expr {
+                                    id: NodeId(6),
+                                    kind: ExprKind::Lit(Literal::Int(8))
+                                })
+                            )
+                        }),
+                        Box::new(Block { stmts: vec![
+                            Stmt {
+                                id: NodeId(7),
+                                kind: StmtKind::Expr(Box::new(Expr {
+                                    id: NodeId(8),
+                                    kind: ExprKind::Lit(Literal::Int(-5))
+                                }))
+                            }
+                        ]}),
+                        Box::new(Block { stmts: vec![
+                            Stmt {
+                                id: NodeId(9),
+                                kind: StmtKind::Let(
+                                    ast::Identifier("y".to_string()),
+                                    Box::new(Expr {
+                                        id: NodeId(10),
+                                        kind: ExprKind::Block(Box::new(Block {stmts: vec![
+                                            Stmt {
+                                                id: NodeId(11),
+                                                kind: StmtKind::Let(
+                                                    ast::Identifier("x".to_string()),
+                                                    Box::new(Expr {
+                                                        id: NodeId(12),
+                                                        kind: ExprKind::Lit(Literal::Bool(false))
+                                                    })
+                                                )
+                                            },
+                                    ]}))
+                                }))
+                            },
+                            Stmt {
+                                id: NodeId(13),
+                                kind: StmtKind::Expr(Box::new(Expr {
+                                    id: NodeId(14),
+                                    kind: ExprKind::Lit(Literal::Int(0))
+                                }))
+                            }
+                        ]})
+                    )
+                })
+            )
+        }
+    ];
 
+
+
+
+    let mut type_visitor = TypeVisitor::new();
+    for s in code.iter() {
+        match type_visitor.visit_stmt(s) {
+            Ok(ty) => {
+                let mut str = String::new();
+                let _ = type_visitor.ctxt.write_ty(&ty, &mut str);
+                println!("{}", str);
+            }
+            Err(e) => {
+                println!("{}", e)
+            }
+        }
+    }
+
+    println!("Compiling...");
+
+    let mut compiler = Compiler::new();
+    for s in code.iter() {
+        compiler.visit_stmt(s).unwrap();
+    }
+    // this might be bad
+    let chunk = compiler.current_frame.chunk.build();
+    println!("Code: {:?}", chunk);
+    let file = SourceFile {
+        constant_pool: compiler.temp_map_constants(),
+        main_code: chunk,
+        functions: Vec::new(),
+    };
+
+    println!("Executing...");
+
+    let mut vm = TailVirtualMachine::new(&file);
+    vm.run();
+}
 
 
 fn main() {
-    complex_upvalues();
+    if_test();
 }

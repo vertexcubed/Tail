@@ -16,11 +16,10 @@ pub struct TailVirtualMachine<'src> {
 }
 impl <'src> TailVirtualMachine<'src> {
     pub fn new(source_file: &'src SourceFile) -> Self {
-        let mut call_stack = Vec::with_capacity(512);
         Self {
             source_file,
-            op_stack: Vec::with_capacity(256),
-            call_stack,
+            op_stack: Vec::with_capacity(128),
+            call_stack: Vec::with_capacity(512),
             globals: vec![None; 8],
             upvalues: UpValueStorage::new(),
             heap: Heap::new(),
@@ -422,6 +421,7 @@ impl <'src> TailVirtualMachine<'src> {
         println!("Op Stack: {:?}", self.op_stack);
         println!("Heap: {:?}", self.heap);
         println!("Call Stack: {:?}", self.call_stack);
+        println!("Globals: {:?}", self.globals);
     }
     
     fn read_as_int(&self, value: &StackValue) -> i64 {

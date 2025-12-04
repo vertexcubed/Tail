@@ -1,4 +1,4 @@
-use crate::vm::{CodeChunk, Instruction};
+use crate::vm::{CodeChunk, ConstantPoolEntry, Instruction};
 
 pub mod visit;
 
@@ -17,6 +17,18 @@ pub enum RawConstantKind {
     // TODO
     StructDef,
     Identifier,
+}
+impl Into<ConstantPoolEntry> for RawConstantEntry {
+    fn into(self) -> ConstantPoolEntry {
+        match self.kind {
+            RawConstantKind::Int => ConstantPoolEntry::IntLit(self.data.parse::<i64>().unwrap()),
+            RawConstantKind::Float => ConstantPoolEntry::FloatLit(self.data.parse::<f64>().unwrap()),
+            RawConstantKind::Char => ConstantPoolEntry::CharLit(self.data.chars().next().unwrap()),
+            RawConstantKind::String => ConstantPoolEntry::StringLit(self.data),
+            RawConstantKind::StructDef => todo!(),
+            RawConstantKind::Identifier => todo!(),
+        }
+    }
 }
 
 

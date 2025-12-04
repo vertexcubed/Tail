@@ -4,33 +4,25 @@ use std::rc::{Rc, Weak};
 use crate::ast::{BinOp, Block, Expr, ExprKind, FuncBlock, Identifier, Literal, Stmt, StmtKind, UOp};
 use crate::ast::visit::AstVisitor;
 use crate::compile::{CodeChunkBuilder, CompileError, RawConstantEntry, RawConstantKind};
+use crate::vm;
 use crate::vm::{CodeChunk, Instruction};
 
 
 pub struct Compiler {
-    core: Rc<RefCell<CompilerCore>>,
-    pub root: FrameCompiler,
+    constant_pool: HashMap<RawConstantEntry, usize>,
+    next_pool_slot: usize,
+    pub current_frame: FrameCompiler,
+    frame_stack: Vec<FrameCompiler>,
+    next_global_slot: usize,
 }
 impl Compiler {
     pub fn new() -> Self {
-        let core = Rc::new(RefCell::new(CompilerCore::new()));
         Self {
-            root: FrameCompiler::new(Rc::downgrade(&core), true),
-            core
-        }
-    }
-}
-
-pub struct CompilerCore {
-    // we hash by the constant entry, returning the index that's then stuck into the bytecode
-    constant_pool: HashMap<RawConstantEntry, usize>,
-    next_pool_slot: usize,
-}
-impl CompilerCore {
-    pub fn new() -> Self {
-        Self {
+            current_frame: FrameCompiler::new(true),
             constant_pool: HashMap::new(),
             next_pool_slot: 0,
+            next_global_slot: 0,
+            frame_stack: Vec::new(),
         }
     }
 
@@ -39,15 +31,49 @@ impl CompilerCore {
         self.next_pool_slot += 1;
         slot
     }
+    pub fn reserve_global_slot(&mut self) -> usize {
+        let slot = self.next_global_slot;
+        self.next_global_slot += 1;
+        slot
+    }
+
+    pub fn resolve_upvalue(&mut self, id: &Identifier) -> VarLoc {
+        self._resolve_upvalue(self.frame_stack.len() - 1, id)
+    }
+
+    fn _resolve_upvalue(&mut self, index: usize, id: &Identifier) -> VarLoc {
+        let frame = &self.frame_stack[index];
+        // if this frame had it: yippee!! just return whatever this loc is
+        if let Some(stack) = frame.frame_variable_slots.get(id) {
+            return stack.peek();
+        }
+        // else this loc wasn't in this one either. let's recurse...
+        if index == 0 {
+            panic!("Identifier {} not present at all! Should not happen", id)
+        }
+        // previous upvalue.
+        let prev = self._resolve_upvalue(index - 1, id);
+        // if prev is a global, we just kinda. pass it down and do nothing.
+        if let VarLoc::Global {..} = prev {
+            return prev;
+        }
+        // reserve an upvalue and return it
+        // can't use frame because of multiple mutable refs
+        self.frame_stack[index].reserve_upvalue(prev)
+    }
+
+
+    pub fn temp_map_constants(&self) -> Vec<vm::ConstantPoolEntry> {
+        let mut out = vec![];
+        let mut entries = self.constant_pool.iter().collect::<Vec<_>>();
+        entries.sort_by(|a, b| a.1.cmp(&b.1));
+        for (k, v) in entries.into_iter() {
+            assert_eq!(*v, out.len());
+            out.push(k.clone().into())
+        }
+        out
+    }
 }
-
-
-
-
-
-
-
-
 
 
 
@@ -55,24 +81,23 @@ impl CompilerCore {
 
 // compiles a single stack frame
 pub struct FrameCompiler {
-    parent: Weak<RefCell<CompilerCore>>,
     pub chunk: CodeChunkBuilder,
     // if true, this is the root frame compiler. scope 0 = Global
     is_root: bool,
     frame_variable_slots: HashMap<Identifier, LocStack>,
+    upvalues: Vec<VarLoc>,
     next_var_slot: usize,
     scope_level: usize,
 }
 impl FrameCompiler {
-    pub fn new(parent: Weak<RefCell<CompilerCore>>, is_root: bool) -> Self {
+    pub fn new(is_root: bool) -> Self {
         Self {
             chunk: CodeChunkBuilder::new(),
 
             frame_variable_slots: HashMap::new(),
             is_root,
-            parent,
             next_var_slot: 0,
-            // level 0 = global scope
+            upvalues: Vec::new(),
             scope_level: 0
         }
     }
@@ -85,13 +110,30 @@ impl FrameCompiler {
 
     pub fn trim_locs(&mut self, id: &Identifier) {
         if let Some(loc) = self.frame_variable_slots.get_mut(id) {
-            while self.scope_level < loc.peek().scope {
-                loc.pop();
+            while loc.len() > 0 {
+                match loc.peek() {
+                    VarLoc::Local { slot: _, scope } => {
+                        if self.scope_level < scope {
+                            loc.pop();
+                        }
+                    }
+                    _ => break
+                }
             }
             if loc.len() == 0 {
                 self.frame_variable_slots.remove(id);
             }
         }
+    }
+
+    // guaranteed to never be a Global
+    pub fn reserve_upvalue(&mut self, loc: VarLoc) -> VarLoc {
+        if let VarLoc::Global {..} = loc {
+            panic!("Can't reserve an upvalue for a global loc. Should never happen")
+        }
+        let index = self.upvalues.len();
+        self.upvalues.push(loc);
+        VarLoc::UpValue { slot: index }
     }
 
     fn push_bop_instr(&mut self, bop: &BinOp) -> Result<(), CompileError> {
@@ -118,7 +160,7 @@ impl FrameCompiler {
     }
 }
 
-impl AstVisitor for FrameCompiler {
+impl AstVisitor for Compiler {
     type ExprResult = Result<(), CompileError>;
 
     fn visit_stmt(&mut self, stmt: &Stmt) -> Self::ExprResult {
@@ -129,52 +171,47 @@ impl AstVisitor for FrameCompiler {
                 self.visit_expr(body)?;
                 // then, we store it into the next available slot.
                 // cases:
-                //      does not exist: just add a new value, easy
+                //      does not exist: just add a new value, easy. then we can just do the shit ig
                 //      current scope < top scope: repeatedly pop until current >= top_scope
                 //      current scope = top scope: modify the slot to next available slot
                 //      current scope > top scope: push a new scope, store in next available slot
-                let slot = self.reserve_var_slot();
-                let loc_type;
-
-                // remove locs that are out of scope
-                self.trim_locs(id);
-                if let Some(loc) = self.frame_variable_slots.get_mut(id) {
-                    let top = loc.peek();
-                    if self.scope_level == top.scope {
-                        loc.replace_top(VarLoc::new(top.loc_type, slot, top.scope));
-                    }
-                    else {
-                        loc.push(VarLoc::new(LocType::Local, slot, self.scope_level));
-                    }
-                    loc_type = top.loc_type;
-                }
-                else {
-                    // easy: add a new value
-                    loc_type = LocType::Local;
-                    self.frame_variable_slots.insert(id.clone(), LocStack::new(VarLoc::new(LocType::Local, slot, self.scope_level)));
-                }
-
-                // make the instruction
-                // if scope level is 0, we're in the global scope. push a GStore/Load instr instead.
-                let instr = if let LocType::Local = loc_type {
-                    match slot {
-                        0 => Instruction::GStore0,
-                        1 => Instruction::GStore1,
-                        2 => Instruction::GStore2,
-                        3 => Instruction::GStore3,
-                        _ => Instruction::GStore(slot)
-                    }
+                let current_scope = self.current_frame.scope_level;
+                let new_loc = if current_scope == 0 && self.current_frame.is_root {
+                    VarLoc::Global { slot: self.reserve_global_slot() }
                 } else {
-                    match slot {
-                        0 => Instruction::Store0,
-                        1 => Instruction::Store1,
-                        2 => Instruction::Store2,
-                        3 => Instruction::Store3,
-                        _ => Instruction::Store(slot)
-                    }
+                    VarLoc::Local { slot: self.current_frame.reserve_var_slot(), scope: current_scope }
                 };
+                // if local not present, calculate it
+                if !self.current_frame.frame_variable_slots.contains_key(id) {
+                    self.current_frame.frame_variable_slots.insert(id.clone(), LocStack::new(new_loc));
+                }
+                let loc_stack = self.current_frame.frame_variable_slots.get_mut(id).unwrap();
+                match loc_stack.peek() {
+                    // if current scope == top scope, just override instead of pushing a new thing
+                    VarLoc::Local { slot: _, scope } if current_scope == scope => {
+                        loc_stack.replace_top(new_loc);
+                    }
+                    // if not just push smth ig lol
+                    _ => {
+                        loc_stack.push(new_loc);
+                    }
+                }
+                let instr = match new_loc {
+                    VarLoc::Local { slot: 0, scope: _ } => Instruction::Store0,
+                    VarLoc::Local { slot: 1, scope: _ } => Instruction::Store1,
+                    VarLoc::Local { slot: 2, scope: _ } => Instruction::Store2,
+                    VarLoc::Local { slot: 3, scope: _ } => Instruction::Store3,
+                    VarLoc::Local { slot, scope: _ } => Instruction::Store(slot),
+                    VarLoc::Global { slot: 0 } => Instruction::GStore0,
+                    VarLoc::Global { slot: 1 } => Instruction::GStore1,
+                    VarLoc::Global { slot: 2 } => Instruction::GStore2,
+                    VarLoc::Global { slot: 3 } => Instruction::GStore3,
+                    VarLoc::Global { slot } => Instruction::GStore(slot),
+                    VarLoc::UpValue {..} => unreachable!("Can't let bind an upvalue"),
+                };
+
                 // push it
-                self.chunk.push_instr(instr);
+                self.current_frame.chunk.push_instr(instr);
                 Ok(())
 
             }
@@ -184,7 +221,7 @@ impl AstVisitor for FrameCompiler {
             // expressions are easy: just compile, then void the output (pop it off the stack)
             StmtKind::Expr(e) => {
                 self.visit_expr(e)?;
-                self.chunk.push_instr(Instruction::Pop);
+                self.current_frame.chunk.push_instr(Instruction::Pop);
                 Ok(())
             }
             // returns are also easy: just compile the expr then push a "ret" instruction
@@ -192,7 +229,7 @@ impl AstVisitor for FrameCompiler {
                 if let Some(e) = body {
                     self.visit_expr(e)?;
                 }
-                self.chunk.push_instr(Instruction::Ret);
+                self.current_frame.chunk.push_instr(Instruction::Ret);
                 Ok(())
             }
         }
@@ -201,34 +238,39 @@ impl AstVisitor for FrameCompiler {
     fn visit_expr(&mut self, expr: &Expr) -> Self::ExprResult {
         match &expr.kind {
             ExprKind::Ident(id) => {
-                // remove locs that are out of scope
-                self.trim_locs(id);
+                // can't find identifier - resolve either a global or upvalue and store it.
+                if self.current_frame.frame_variable_slots.get_mut(id).is_none() {
 
-                let Some(loc) = self.frame_variable_slots.get_mut(id) else {
                     // could not find variable in the current scope - this is either global, or needs to be captured.
-                    // TODO
-                    return Ok(())
-                };
-                let loc = loc.peek();
-                // if scope of this var is global, then we load a GLoad instr instead
-                let instr = if let LocType::Global = loc.loc_type {
-                    match loc.slot {
-                        0 => Instruction::GLoad0,
-                        1 => Instruction::GLoad1,
-                        2 => Instruction::GLoad2,
-                        3 => Instruction::GLoad3,
-                        _ => Instruction::GLoad(loc.slot)
-                    }
-                } else {
-                    match loc.slot {
-                        0 => Instruction::Load0,
-                        1 => Instruction::Load1,
-                        2 => Instruction::Load2,
-                        3 => Instruction::Load3,
-                        _ => Instruction::Load(loc.slot)
+                    let loc = self.resolve_upvalue(id);
+                    match loc {
+                        VarLoc::Global { .. } => {
+                            // we found a global. bind to environment for convenience and then compile instr
+                            self.current_frame.frame_variable_slots.insert(id.clone(), LocStack::new(loc));
+                        }
+                        _ => {
+                            let upvalue = self.current_frame.reserve_upvalue(loc);
+                            // bind the upvalue to the environment for later
+                            self.current_frame.frame_variable_slots.insert(id.clone(), LocStack::new(upvalue));
+
+                        }
                     }
                 };
-                self.chunk.push_instr(instr);
+                let loc = self.current_frame.frame_variable_slots.get(id).unwrap().peek();
+                let instr = match loc {
+                    VarLoc::Local { slot: 0, scope: _ } => Instruction::Load0,
+                    VarLoc::Local { slot: 1, scope: _ } => Instruction::Load1,
+                    VarLoc::Local { slot: 2, scope: _ } => Instruction::Load2,
+                    VarLoc::Local { slot: 3, scope: _ } => Instruction::Load3,
+                    VarLoc::Local { slot, scope: _ } => Instruction::Load(slot),
+                    VarLoc::Global { slot: 0 } => Instruction::GLoad0,
+                    VarLoc::Global { slot: 1 } => Instruction::GLoad1,
+                    VarLoc::Global { slot: 2 } => Instruction::GLoad2,
+                    VarLoc::Global { slot: 3 } => Instruction::GLoad3,
+                    VarLoc::Global { slot } => Instruction::GLoad(slot),
+                    VarLoc::UpValue { slot } => Instruction::UpLoad(slot),
+                };
+                self.current_frame.chunk.push_instr(instr);
                 Ok(())
             },
             ExprKind::Lit(lit) => self.visit_literal(lit),
@@ -240,7 +282,7 @@ impl AstVisitor for FrameCompiler {
                     // TODO: operator overloading
                     UOp::Neg => Instruction::INeg,
                 };
-                self.chunk.push_instr(instr);
+                self.current_frame.chunk.push_instr(instr);
                 Ok(())
             },
 
@@ -248,33 +290,32 @@ impl AstVisitor for FrameCompiler {
                 // TODO: Update calling convention to be left -> right not right -> left (unintuitive)
                 self.visit_expr(right)?;
                 self.visit_expr(left)?;
-                self.push_bop_instr(bop)
+                self.current_frame.push_bop_instr(bop)
             },
             ExprKind::If(cond, then_branch, else_branch) => {
                 self.visit_expr(cond)?;
                 // this is used to later write the correct jump address
-                let cond_jump_ip = self.chunk.current_ip();
-                self.chunk.push_instr(Instruction::JEq(0)); // temp address
+                let cond_jump_ip = self.current_frame.chunk.current_ip();
+                self.current_frame.chunk.push_instr(Instruction::JEq(0)); // temp address
 
                 // compile then branch
                 self.visit_block(then_branch)?;
                 // also used later to write the correct jump address
-                let finish_jump_ip = self.chunk.current_ip();
-                self.chunk.push_instr(Instruction::Jump(0)); // temp address
+                let finish_jump_ip = self.current_frame.chunk.current_ip();
+                self.current_frame.chunk.push_instr(Instruction::Jump(0)); // temp address
                 // compile else branch
                 self.visit_block(else_branch)?;
 
-                let end_if_ip = self.chunk.current_ip();
+                let end_if_ip = self.current_frame.chunk.current_ip();
 
                 // finish_jump_ip + 1 = start of else branch
-                *self.chunk.get_instr_mut(cond_jump_ip) = Instruction::JEq((finish_jump_ip + 1) as u16);
+                *self.current_frame.chunk.get_instr_mut(cond_jump_ip) = Instruction::JEq((finish_jump_ip + 1) as u16);
                 // end_if_ip = end of the if statement
-                *self.chunk.get_instr_mut(finish_jump_ip) = Instruction::Jump(end_if_ip as u16);
+                *self.current_frame.chunk.get_instr_mut(finish_jump_ip) = Instruction::Jump(end_if_ip as u16);
 
                 Ok(())
             },
             ExprKind::Closure(name, args, body) => {
-
 
 
                 Ok(())
@@ -282,7 +323,7 @@ impl AstVisitor for FrameCompiler {
             ExprKind::Call(_, _) => todo!(),
             ExprKind::Ref(e) => {
                 self.visit_expr(e)?;
-                self.chunk.push_instr(Instruction::Alloc);
+                self.current_frame.chunk.push_instr(Instruction::Alloc);
                 Ok(())
             },
             ExprKind::Block(block) => {
@@ -298,7 +339,32 @@ impl AstVisitor for FrameCompiler {
     }
 
     fn visit_block(&mut self, block: &Block) -> Self::ExprResult {
-        todo!()
+        self.current_frame.scope_level += 1;
+        for i in 0..block.stmts.len() {
+            let stmt = &block.stmts[i];
+            // if i is the last stmt and the stmt is an expr: just compile the expr without the pop
+            // that way, the last value will still be on the stack - normally, expr; adds a pop expression so.
+            if i == block.stmts.len() - 1 {
+                if let StmtKind::Expr(e) = &stmt.kind {
+                    self.visit_expr(e)?;
+                }
+                else {
+                    // just visit normally and push unit onto the stack
+                    self.visit_stmt(stmt)?;
+                    self.current_frame.chunk.push_instr(Instruction::IPush0);
+                }
+            }
+            else {
+                self.visit_stmt(stmt)?;
+            }
+        }
+
+        self.current_frame.scope_level -= 1;
+        let keys = self.current_frame.frame_variable_slots.keys().cloned().collect::<Vec<_>>();
+        for k in keys.iter() {
+            self.current_frame.trim_locs(k);
+        }
+        Ok(())
     }
 
     // blocks create a *new* code chunk
@@ -325,16 +391,14 @@ impl AstVisitor for FrameCompiler {
                 data: (*i).to_string(),
                     kind: RawConstantKind::Int,
                 };
-                let core = self.parent.upgrade().unwrap();
-                let mut core = core.borrow_mut();
 
                 // if entry doesn't exist, add it.
-                if !core.constant_pool.contains_key(&entry) {
-                    let slot = core.reserve_pool_slot();
-                    core.constant_pool.insert(entry.clone(), slot);
+                if !self.constant_pool.contains_key(&entry) {
+                    let slot = self.reserve_pool_slot();
+                    self.constant_pool.insert(entry.clone(), slot);
                 }
 
-                Instruction::Ldc(core.constant_pool.get(&entry).unwrap().clone())
+                Instruction::Ldc(self.constant_pool.get(&entry).unwrap().clone())
             }
             Literal::Float(f) => todo!(),
             Literal::Char(c) => todo!(),
@@ -342,7 +406,7 @@ impl AstVisitor for FrameCompiler {
             Literal::Bool(true) => Instruction::IPush1,
             Literal::Bool(false) => Instruction::IPush0,
         };
-        self.chunk.push_instr(instr);
+        self.current_frame.chunk.push_instr(instr);
         Ok(())
     }
 }
@@ -363,7 +427,6 @@ impl LocStack {
     }
 
     pub fn pop(&mut self) -> VarLoc {
-        debug_assert!(self.locs.len() > 1);
         self.locs.pop().unwrap()
     }
 
@@ -381,23 +444,8 @@ impl LocStack {
 
 
 #[derive(Debug, Copy, Clone)]
-pub struct VarLoc {
-    pub loc_type: LocType,
-    pub slot: usize,
-    pub scope: usize,
-}
-impl VarLoc {
-    pub fn new(loc_type: LocType, slot: usize, scope: usize) -> Self {
-        Self {
-            loc_type,
-            slot,
-            scope
-        }
-    }
-}
-
-#[derive(Debug, Copy, Clone)]
-pub enum LocType {
-    Global,
-    Local,
+pub enum VarLoc {
+    Local { slot: usize, scope: usize },
+    Global { slot: usize },
+    UpValue { slot: usize }
 }
