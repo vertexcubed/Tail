@@ -1,3 +1,4 @@
+use std::rc::Rc;
 use crate::vm::vm::TailVirtualMachine;
 use std::time::Instant;
 
@@ -78,7 +79,8 @@ macro_rules! impl_id {
     };
 }
 pub(crate) use impl_id;
-
+use crate::vm::{StackSlot, StackValue, StructValue};
+use crate::vm::memory::MemoryAddress;
 
 fn run_code(code: impl FnOnce() -> Vec<Stmt>) {
     debug::init_counter();
@@ -126,6 +128,24 @@ fn run_code(code: impl FnOnce() -> Vec<Stmt>) {
 }
 
 
+struct SmallStackSlot {
+    captured: Option<usize>,
+    data: SmallStackValue,
+}
+enum SmallStackValue {
+    Int(i64),
+    Float(f64),
+    Char(char),
+    // Struct(StructValue),
+    Ref(MemoryAddress),
+    // index in constant pool of FunctionDef, followed by indices of upvalues
+    Closure(Rc<(usize, [usize])>),
+}
+
 fn main() {
-    run_code(debug::bad_fib);
+
+    // println!("{}", size_of::<Option<SmallStackSlot>>());
+    // println!("{}", size_of::<SmallStackSlot>());
+    // println!("{}", size_of::<Rc<[usize]>>());
+    run_code(debug::higher_order_closures);
 }

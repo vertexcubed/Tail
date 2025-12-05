@@ -1,6 +1,6 @@
-use crate::vm::def::StackLoc;
-use crate::vm::memory::{Heap, UpValueStorage};
-use crate::vm::{CodeChunk, ConstantPoolEntry, Instruction, SourceFile, StackFrame, StackSlot, StackValue, StructValue, UpValue};
+use crate::vm::def::{FunctionDef, StackLoc};
+use crate::vm::memory::{CallFrame, CallStack, Heap, UpValueStorage};
+use crate::vm::{CodeChunk, ConstantPoolEntry, Instruction, InstructionAddress, SourceFile, StackFrame, StackSlot, StackValue, StructValue, UpValue};
 use log::error;
 use std::rc::Rc;
 
@@ -8,29 +8,31 @@ use std::rc::Rc;
 // src is the lifetime of the source file.
 pub struct TailVirtualMachine<'src> {
     source_file: &'src SourceFile,
+
+    call_stack: CallStack,
     upvalues: UpValueStorage,
     op_stack: Vec<StackValue>,
     globals: Vec<Option<StackValue>>,
-    call_stack: Vec<StackFrame<'src>>,
     heap: Heap,
 }
+
+
 impl <'src> TailVirtualMachine<'src> {
     pub fn new(source_file: &'src SourceFile) -> Self {
         Self {
             source_file,
             op_stack: Vec::with_capacity(128),
-            call_stack: Vec::with_capacity(512),
             globals: vec![None; 8],
             upvalues: UpValueStorage::new(),
             heap: Heap::new(),
+            call_stack: CallStack::new(),
         }
     }
 
     pub fn run(&mut self) {
         let mut ip = 0;
-        self.push_frame(StackFrame::base(&self.source_file.main_code));
 
-        let mut code_chunk = self.call_stack.last().unwrap().code_chunk;
+        let mut code_chunk = self.source_file.get_main_code();
         while(ip < code_chunk.data.len()) {
             let mut next_ip = None;
 
@@ -91,23 +93,23 @@ impl <'src> TailVirtualMachine<'src> {
                 }
                 Instruction::Load0 => {
                     let value = self.load(0);
-                    self.push(value);
+                    self.push(value.clone());
                 }
                 Instruction::Load1 => {
                     let value = self.load(1);
-                    self.push(value);
+                    self.push(value.clone());
                 }
                 Instruction::Load2 => {
                     let value = self.load(2);
-                    self.push(value);
+                    self.push(value.clone());
                 }
                 Instruction::Load3 => {
                     let value = self.load(3);
-                    self.push(value);
+                    self.push(value.clone());
                 }
                 Instruction::Load(index) => {
                     let value = self.load(*index as usize);
-                    self.push(value);
+                    self.push(value.clone());
                 }
                 Instruction::GLoad0 => {
                     let value = self.load_global(0);
@@ -201,16 +203,22 @@ impl <'src> TailVirtualMachine<'src> {
                         panic!("Should never be reached")
                     };
                     let function_def = self.load_constant(index).as_func_def();
-                    let mut new_frame = StackFrame::new(
-                        self.source_file.get_func_code(function_def.as_ref()),
-                        ip + 1,
-                        upvalues.clone()
-                    );
-                    new_frame.slots[0] = Some(StackSlot::new(StackValue::Closure(index, upvalues)));
+                    // let mut new_frame = StackFrame::new(
+                    //     self.source_file.get_func_code(function_def.as_ref()),
+                    //     ip + 1,
+                    //     upvalues.clone()
+                    // );
+                    // new_frame.slots[0] = Some(StackSlot::new(StackValue::Closure(index, upvalues)));
+                    // for i in 0..(function_def.arity as usize) {
+                    //     new_frame.slots[i + 1] = Some(StackSlot::new(self.pop()));
+                    // }
+                    self.push_frame(ip + 1, upvalues.clone(), function_def.as_ref());
+                    self.store(0, StackValue::Closure(index, upvalues));
                     for i in 0..(function_def.arity as usize) {
-                        new_frame.slots[i + 1] = Some(StackSlot::new(self.pop()));
+                        let v = self.pop();
+                        self.store(i + 1, v);
                     }
-                    self.push_frame(new_frame);
+
                     next_ip = Some(0);
 
                     // let StackValue::Function(arity, chunk) = self.pop() else {
@@ -226,12 +234,24 @@ impl <'src> TailVirtualMachine<'src> {
                 }
                 Instruction::Ret => {
                     // Close any possibly open upvalues
-                    let mut old_frame = self.pop_frame();
-                    for i in 0..old_frame.slots.len() {
-                        self.clear_slot(&mut old_frame, i);
+                    // TODO: this is very slow and needs to be optimized
+                    for s in self.call_stack.slot_iter_mut() {
+                        // clears the slot and gives us the value that was there
+                        let Some(old_slot) = std::mem::replace(s, None) else {
+                            continue;
+                        };
+                        if !old_slot.is_captured() {
+                            continue;
+                        }
+                        // this local was captured. close the upvalue
+                        let upvalue_index = old_slot.upvalue_slot().unwrap();
+                        let data: StackValue = old_slot.into();
+                        let heap_addr = self.heap.alloc(data);
+
+                        self.upvalues.close_upvalue(upvalue_index, heap_addr);
                     }
 
-                    next_ip = Some(old_frame.return_address);
+                    next_ip = Some(self.pop_frame());
                 }
                 Instruction::Struct(index) => {
                     let def = self.load_constant(*index).as_struct_def();
@@ -386,7 +406,7 @@ impl <'src> TailVirtualMachine<'src> {
                             upvalues.push(self.local_upvalue_idx(c.slot as usize));
                         }
                     }
-                    self.push(StackValue::Closure(*index, upvalues));
+                    self.push(StackValue::Closure(*index, upvalues.into_boxed_slice().into()));
                 }
                 Instruction::UpStore(index) => 'upstore: {
                     // ugly to prevent multiple mut references :')
@@ -415,16 +435,22 @@ impl <'src> TailVirtualMachine<'src> {
                 next_ip = Some(ip + 1);
             }
             ip = next_ip.unwrap();
-            code_chunk = self.call_stack.last().unwrap().code_chunk;
+            code_chunk = if self.call_stack.is_main() {
+                self.source_file.get_main_code()
+            }
+            else {
+                let idx = self.call_stack.current_code();
+                self.source_file.get_func_by_index(idx)
+            }
         }
     }
 
     pub fn _print_state(&self) {
         println!("Op Stack: {:?}", self.op_stack);
         println!("Heap: {:?}", self.heap);
-        println!("Call Stack: {:?}", self.call_stack);
+        // println!("Call Stack: {:?}", self.call_stack);
         println!("Globals: {:?}", self.globals);
-        println!("Current locals: {:?}", self.call_stack.last().unwrap().slots);
+        // println!("Current locals: {:?}", self.call_stack.last().unwrap().slots);
         println!("Upvalues: {:?}", self.upvalues)
     }
     
@@ -454,14 +480,6 @@ impl <'src> TailVirtualMachine<'src> {
             _ => panic!("Cant read non char as char")
         }
     }
-    
-    fn push_frame(&mut self, frame: StackFrame<'src>) {
-        self.call_stack.push(frame);
-    }
-
-    fn pop_frame(&mut self) -> StackFrame<'src> {
-        self.call_stack.pop().unwrap()
-    }
 
     fn push(&mut self, value: StackValue) {
         self.op_stack.push(value);
@@ -474,12 +492,20 @@ impl <'src> TailVirtualMachine<'src> {
     fn peek(&self) -> &StackValue {
         self.op_stack.last().unwrap()
     }
+
     fn peek_mut(&mut self) -> &mut StackValue {
         self.op_stack.last_mut().unwrap()
     }
 
+    fn push_frame(&mut self, return_addr: InstructionAddress, upvalues: Rc<[usize]>, function: &FunctionDef) {
+        self.call_stack.push_frame(return_addr, upvalues, function.code_chunk);
+    }
+    fn pop_frame(&mut self) -> usize {
+        self.call_stack.pop_frame().return_addr
+    }
+
     fn store(&mut self, slot: usize, value: StackValue) {
-        self.call_stack.last_mut().unwrap().store(slot, value);
+        self.call_stack.store(slot, value);
     }
 
     fn store_loc(&mut self, loc: &StackLoc, value: StackValue) {
@@ -502,11 +528,14 @@ impl <'src> TailVirtualMachine<'src> {
             StackValue::Ref(addr) => addr,
             _ => panic!("Can't indirect store into non reference!")
         };
-        self.heap.write(addr, value);
+        self.heap.write(*addr, value);
     }
 
-    fn load(&self, slot: usize) -> StackValue {
-        self.call_stack.last().unwrap().load(slot)
+    fn load(&self, slot: usize) -> &StackValue {
+        self.call_stack.load(slot)
+    }
+    fn load_mut(&mut self, slot: usize) -> &mut StackValue {
+        self.call_stack.load_mut(slot)
     }
 
     fn load_loc(&self, loc: &StackLoc) -> StackValue {
@@ -522,30 +551,13 @@ impl <'src> TailVirtualMachine<'src> {
     }
 
     fn local_upvalue_idx(&self, index: usize) -> usize {
-       self.call_stack.last().unwrap().upvalues[index]
-    }
-
-    fn clear_slot(&mut self, frame: &mut StackFrame, index: usize) {
-        // clears the slot and gives us the value that was there
-        let Some(slot) = std::mem::replace(&mut frame.slots[index], None) else {
-            return;
-        };
-        if !slot.is_captured() {
-            return;
-        }
-        // this local was captured. close the upvalue
-        let upvalue_index = slot.upvalue_slot().unwrap();
-        let data: StackValue = slot.into();
-        let heap_addr = self.heap.alloc(data);
-
-
-        self.upvalues.close_upvalue(upvalue_index, heap_addr);
+       self.call_stack.upvalue_index(index)
     }
 
     /// get or create an upvalue for a local variable. If it already exists, we return the index instead of making a new one.
     fn get_or_create_upvalue(&mut self, slot: usize) -> usize {
         let loc = StackLoc {
-            frame: self.call_stack.len() - 1,
+            frame: self.call_stack.frame_len(),
             slot,
         };
         match self.upvalues.get_open_upvalue_idx(&loc) {
@@ -559,9 +571,9 @@ impl <'src> TailVirtualMachine<'src> {
     }
 
     fn get_slot(&self, loc: &StackLoc) -> &StackSlot {
-        self.call_stack[loc.frame].slots[loc.slot].as_ref().unwrap()
+        self.call_stack.get_slot(loc)
     }
     fn get_slot_mut(&mut self, loc: &StackLoc) -> &mut StackSlot {
-        self.call_stack[loc.frame].slots[loc.slot].as_mut().unwrap()
+        self.call_stack.get_slot_mut(loc)
     }
 }

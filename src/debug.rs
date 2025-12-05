@@ -329,24 +329,6 @@ pub fn basic_closure() -> Vec<Stmt> {
 
 
 pub fn higher_order_closures() -> Vec<Stmt> {
-    /// let make() = {
-    ///   let a = 3
-    ///   let inner() = {
-    ///     a = a + 2
-    ///   }
-    ///   return inner
-    /// }
-    ///
-    /// let a = make()
-    /// let b = make()
-    /// a()
-    /// b()
-    /// b()
-    /// a()
-    /// b()
-
-
-
 
     vec![
         func("make", vec![], vec![

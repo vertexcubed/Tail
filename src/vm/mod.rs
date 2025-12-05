@@ -16,7 +16,7 @@ pub enum StackValue {
     Struct(StructValue),
     Ref(MemoryAddress),
     // index in constant pool of FunctionDef, followed by indices of upvalues
-    Closure(usize, Vec<usize>),
+    Closure(usize, Rc<[usize]>),
 }
 #[derive(Debug, Clone)]
 pub struct StructValue {
@@ -73,7 +73,7 @@ impl Index<usize> for CodeChunk {
 
 
 // TODO: may change
-pub type Address = usize;
+pub type InstructionAddress = usize;
 pub type Identifier = String;
 pub type TypeIdentifier = String;
 
@@ -82,10 +82,10 @@ pub type TypeIdentifier = String;
 #[derive(Debug)]
 pub struct StackFrame<'src> {
     slots: Vec<Option<StackSlot>>,
-    return_address: Address,
+    return_address: InstructionAddress,
     is_base: bool,
     // vector of upvalue indices
-    upvalues: Vec<usize>,
+    upvalues: Rc<[usize]>,
     code_chunk: &'src CodeChunk,
 }
 impl <'src> StackFrame<'src> {
@@ -94,12 +94,12 @@ impl <'src> StackFrame<'src> {
             slots: vec![None; 8],
             return_address: 0,
             is_base: true,
-            upvalues: Vec::new(),
+            upvalues: Rc::new([]),
             code_chunk,
         }
     }
 
-    pub fn new(code_chunk: &'src CodeChunk, return_address: Address, upvalues: Vec<usize>) -> Self {
+    pub fn new(code_chunk: &'src CodeChunk, return_address: InstructionAddress, upvalues: Rc<[usize]>) -> Self {
         Self {
             slots: vec![None; 8],
             return_address,
@@ -253,6 +253,10 @@ pub struct SourceFile {
 impl SourceFile {
     pub fn get_func_code(&self, def: &FunctionDef) -> &CodeChunk {
         &self.functions[def.code_chunk]
+    }
+
+    pub fn get_func_by_index(&self, idx: usize) -> &CodeChunk {
+        &self.functions[idx]
     }
 
     pub fn get_main_code(&self) -> &CodeChunk {

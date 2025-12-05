@@ -1,4 +1,4 @@
-use crate::vm::{Address, Identifier, TypeIdentifier};
+use crate::vm::{InstructionAddress, Identifier, TypeIdentifier};
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 
@@ -64,7 +64,7 @@ impl Display for FunctionDef {
 pub struct StructDef {
     pub name: TypeIdentifier,
     field_table: HashMap<Identifier, usize>,
-    method_table: HashMap<Identifier, Address>,
+    method_table: HashMap<Identifier, InstructionAddress>,
 }
 impl StructDef {
 
