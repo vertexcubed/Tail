@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::fmt::{Display, Formatter};
 use crate::vm::{Address, Identifier, TypeIdentifier};
 
 
@@ -29,13 +30,28 @@ impl CaptureDef {
         }
     }
 }
+impl Display for CaptureDef {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        if self.is_local {
+            write!(f, "Loc({})", self.slot)
+        }
+        else {
+            write!(f, "Up({})", self.slot)
+        }
+    }
+}
 
 /// Definition of a function in a source file
-#[derive(Debug)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct FunctionDef {
     pub arity: u8,
     // index of the chunk of code corresponding to this function
     pub code_chunk: usize,
+}
+impl Display for FunctionDef {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Function #{}", self.code_chunk)
+    }
 }
 
 
@@ -72,6 +88,23 @@ impl StructDef {
 
     pub fn field_len(&self) -> usize {
         self.field_table.len()
+    }
+}
+impl Display for StructDef {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+
+        let mut fields = self.field_table.iter().collect::<Vec<_>>();
+        fields.sort_by(|a, b| a.1.cmp(&b.1));
+        let fields = fields.iter().map(|(k, _)| *k).collect::<Vec<_>>();
+
+        write!(f, "{}(", self.name)?;
+        for (i, k) in fields.iter().enumerate() {
+            write!(f, "{}", **k)?;
+            if i != fields.len() - 1 {
+                write!(f, ", ")?;
+            }
+        }
+        write!(f, ")")
     }
 }
 // classes will behave largely the same

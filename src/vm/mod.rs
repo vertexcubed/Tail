@@ -228,6 +228,21 @@ impl  ConstantPoolEntry {
         }
     }
 }
+impl Display for ConstantPoolEntry {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ConstantPoolEntry::IntLit(n) => write!(f, "{}", *n),
+            ConstantPoolEntry::FloatLit(n) => write!(f, "{}", *n),
+            ConstantPoolEntry::CharLit(c) => write!(f, "'{}'", *c),
+            ConstantPoolEntry::StringLit(s) => write!(f, "\"{}\"", *s),
+            ConstantPoolEntry::StructDef(strukt) => write!(f, "{}", *strukt),
+            ConstantPoolEntry::FunctionDef(func) => write!(f, "{}", *func),
+            ConstantPoolEntry::Identifier(id) => write!(f, "{}", id),
+        }
+    }
+}
+
+
 
 
 pub struct SourceFile {
@@ -242,6 +257,32 @@ impl SourceFile {
 
     pub fn get_main_code(&self) -> &CodeChunk {
         &self.main_code
+    }
+
+
+
+    fn _write_chunk(before: &str, chunk: &CodeChunk, f: &mut Formatter<'_>) -> std::fmt::Result {
+        for (i, instr) in chunk.data.iter().enumerate() {
+            write!(f, "{}{}\n", before, *instr)?;
+        }
+        Ok(())
+    }
+}
+impl Display for SourceFile {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Source File\n==========\n")?;
+        write!(f, "ConstantPool:\n")?;
+        for (i, c) in self.constant_pool.iter().enumerate() {
+            write!(f, "  {}: {}\n", i, c)?;
+        }
+        for (i, chunk) in self.functions.iter().enumerate() {
+            write!(f, "Function #{}:\n", i)?;
+            SourceFile::_write_chunk("  ", &chunk, f)?;
+        }
+        write!(f, "\nMain:\n")?;
+        SourceFile::_write_chunk("  ", &self.main_code, f)?;
+
+        write!(f, "==========")
     }
 }
 
@@ -363,4 +404,82 @@ pub enum Instruction {
     ClosPush(usize, Vec<CaptureDef>),
     Call,
     Ret,
+}
+impl Display for Instruction {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let as_str = match self {
+            Instruction::IPushM1 => "IPushM1".to_string(),
+            Instruction::IPush0 => "IPush0".to_string(),
+            Instruction::IPush1 => "IPush1".to_string(),
+            Instruction::IPush2 => "IPush2".to_string(),
+            Instruction::IPush3 => "IPush3".to_string(),
+            Instruction::IPush4 => "IPush4".to_string(),
+            Instruction::IPush5 => "IPush5".to_string(),
+            Instruction::IPush(n) => format!("IPush    {}", *n),
+            Instruction::Pop => "Pop".to_string(),
+            Instruction::Dup => "Dup".to_string(),
+            Instruction::Ldc(n) => format!("Ldc   #{}", *n),
+            Instruction::Store0 => "Store0".to_string(),
+            Instruction::Store1 => "Store1".to_string(),
+            Instruction::Store2 => "Store2".to_string(),
+            Instruction::Store3 => "Store3".to_string(),
+            Instruction::Store(n) => format!("Store    {}", *n),
+            Instruction::Load0 => "Load0".to_string(),
+            Instruction::Load1 => "Load1".to_string(),
+            Instruction::Load2 => "Load2".to_string(),
+            Instruction::Load3 => "Load3".to_string(),
+            Instruction::Load(n) => format!("Load    {}", *n),
+            Instruction::GStore0 => "GStore0".to_string(),
+            Instruction::GStore1 => "GStore1".to_string(),
+            Instruction::GStore2 => "GStore2".to_string(),
+            Instruction::GStore3 => "GStore3".to_string(),
+            Instruction::GStore(n) => format!("GStore    {}", *n),
+            Instruction::GLoad0 => "GLoad0".to_string(),
+            Instruction::GLoad1 => "GLoad1".to_string(),
+            Instruction::GLoad2 => "GLoad2".to_string(),
+            Instruction::GLoad3 => "GLoad3".to_string(),
+            Instruction::GLoad(n) => format!("GLoad    {}", *n),
+            Instruction::UpStore(n) => format!("UpStore    {}", *n),
+            Instruction::UpLoad(n) => format!("UpLoad    {}", *n),
+            Instruction::Alloc => "Alloc".to_string(),
+            Instruction::Deref => "Deref".to_string(),
+            Instruction::Write => "Write".to_string(),
+            Instruction::Struct(s) => format!("Struct   #{}", *s),
+            Instruction::GetField(f) => format!("GetField   #{}", *f),
+            Instruction::SetField(f) => format!("SetField   #{}", *f),
+            Instruction::GetFieldInd(f) => format!("GetFieldInd   #{}", *f),
+            Instruction::SetFieldInd(f) => format!("SetFieldInd   #{}", *f),
+            Instruction::IAdd => "IAdd".to_string(),
+            Instruction::ISub => "ISub".to_string(),
+            Instruction::IMul => "IMul".to_string(),
+            Instruction::IDiv => "IDiv".to_string(),
+            Instruction::IMod => "IMod".to_string(),
+            Instruction::INeg => "INeg".to_string(),
+            Instruction::Eq => "Eq".to_string(),
+            Instruction::NEq => "NEq".to_string(),
+            Instruction::Lt => "Lt".to_string(),
+            Instruction::Lte => "Lte".to_string(),
+            Instruction::Gt => "Gt".to_string(),
+            Instruction::Gte => "Gte".to_string(),
+            Instruction::BitAnd => "BitAnd".to_string(),
+            Instruction::BitOr => "BitOr".to_string(),
+            Instruction::Swap => "Swap".to_string(),
+            Instruction::Jump(p) => format!("Jump   :{}", *p),
+            Instruction::JEq(p) => format!("JEq   :{}", *p),
+            Instruction::JNe(p) => format!("JNe   :{}", *p),
+            Instruction::ClosPush(index, vec) => {
+                let mut str = format!("ClosPush   #{} {}", *index, vec.len());
+                for (i, c) in vec.iter().enumerate() {
+                    str.push_str(format!("{}", c).as_str());
+                    if i < vec.len() - 1 {
+                        str.push_str(" ");
+                    }
+                }
+                str
+            },
+            Instruction::Call => "Call".to_string(),
+            Instruction::Ret => "Ret".to_string(),
+        };
+        write!(f, "{}", as_str)
+    }
 }

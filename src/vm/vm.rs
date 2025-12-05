@@ -34,7 +34,7 @@ impl <'src> TailVirtualMachine<'src> {
         while(ip < code_chunk.data.len()) {
             let mut next_ip = None;
 
-            println!("{:?}", code_chunk[ip]);
+            // println!("{:?}", code_chunk[ip]);
 
             match &code_chunk[ip] {
                 Instruction::IPushM1 => self.push(StackValue::Int(-1)),

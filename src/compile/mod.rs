@@ -1,43 +1,53 @@
+use std::rc::Rc;
 use crate::vm::{CodeChunk, ConstantPoolEntry, Instruction};
+use crate::vm::def::FunctionDef;
 
 pub mod visit;
 
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
-pub struct RawConstantEntry {
-    data: String,
-    kind: RawConstantKind
-}
-#[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
-pub enum RawConstantKind {
-    Int,
-    Float,
-    Char,
-    String,
-    // TODO
-    StructDef,
-    Identifier,
+pub enum RawConstantEntry {
+    Int(i64),
+    // floats are not hashable so we do strings
+    Float(String),
+    Char(char),
+    String(String),
+    StructDef(()),
+    Identifier(String),
+    Function(FunctionDef)
 }
 impl Into<ConstantPoolEntry> for RawConstantEntry {
     fn into(self) -> ConstantPoolEntry {
-        match self.kind {
-            RawConstantKind::Int => ConstantPoolEntry::IntLit(self.data.parse::<i64>().unwrap()),
-            RawConstantKind::Float => ConstantPoolEntry::FloatLit(self.data.parse::<f64>().unwrap()),
-            RawConstantKind::Char => ConstantPoolEntry::CharLit(self.data.chars().next().unwrap()),
-            RawConstantKind::String => ConstantPoolEntry::StringLit(self.data),
-            RawConstantKind::StructDef => todo!(),
-            RawConstantKind::Identifier => todo!(),
+        match self {
+            RawConstantEntry::Int(data) => ConstantPoolEntry::IntLit(data),
+            RawConstantEntry::Float(data) => ConstantPoolEntry::FloatLit(data.parse::<f64>().unwrap()),
+            RawConstantEntry::Char(data) => ConstantPoolEntry::CharLit(data),
+            RawConstantEntry::String(data) => ConstantPoolEntry::StringLit(data),
+            RawConstantEntry::StructDef(data) => todo!(),
+            RawConstantEntry::Identifier(data) => todo!(),
+            RawConstantEntry::Function(data) => ConstantPoolEntry::FunctionDef(Rc::new(data)),
         }
     }
 }
 
 
 pub struct CodeChunkBuilder {
+    index: CodeChunkIndex,
     data: Vec<Instruction>,
 }
 impl CodeChunkBuilder {
-    pub fn new() -> Self {
-        CodeChunkBuilder { data: Vec::new() }
+    pub fn root() -> Self {
+        CodeChunkBuilder { 
+            data: Vec::new(),
+            index: CodeChunkIndex::Root,
+        }
+    }
+    
+    pub fn new(index: usize) -> Self {
+        Self {
+            data: Vec::new(),
+            index: CodeChunkIndex::Function(index)
+        }
     }
 
     pub fn push_instr(&mut self, instruction: Instruction) -> &mut Self {
@@ -60,6 +70,14 @@ impl CodeChunkBuilder {
     pub fn get_instr_mut(&mut self, ip: usize) -> &mut Instruction {
         &mut self.data[ip]
     }
+    
+    pub fn last(&self) -> &Instruction {
+        self.data.last().unwrap()
+    }
+
+    pub fn last_mut(&mut self) -> &mut Instruction {
+        self.data.last_mut().unwrap()
+    }
 
     pub fn build(&mut self) -> CodeChunk {
         let data = std::mem::replace(&mut self.data, Vec::new());
@@ -67,6 +85,23 @@ impl CodeChunkBuilder {
             data
         }
     }
+    
+    pub fn is_root(&self) -> bool {
+        CodeChunkIndex::Root == self.index
+    }
+    pub fn func_index(&self) -> CodeChunkIndex {
+        self.index
+    }
+    
+    pub fn is_empty(&self) -> bool {
+        self.data.is_empty()
+    }
+}
+
+#[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
+pub enum CodeChunkIndex {
+    Root,
+    Function(usize)
 }
 
 #[derive(Debug, Clone)]

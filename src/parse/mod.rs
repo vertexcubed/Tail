@@ -1,7 +1,6 @@
 
 pub mod lex;
 
-
 pub enum Token {
     NL,
     Semi,

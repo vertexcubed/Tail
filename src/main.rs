@@ -1,5 +1,5 @@
 use std::rc::Rc;
-use crate::vm::{CodeChunk, ConstantPoolEntry, SourceFile, StackValue};
+use crate::vm::{CodeChunk, ConstantPoolEntry, SourceFile};
 use crate::vm::Instruction::*;
 use crate::vm::vm::TailVirtualMachine;
 
@@ -8,6 +8,7 @@ mod ast;
 mod ty;
 mod parse;
 mod compile;
+mod debug;
 
 macro_rules! impl_id {
     ($typ:ty) => {
@@ -73,10 +74,9 @@ macro_rules! impl_id {
     };
 }
 pub(crate) use impl_id;
-use crate::ast::{BinOp, Block, Expr, ExprKind, FuncBlock, Literal, NodeId, PlaceExpr, Span, Stmt, StmtKind};
+use crate::ast::{BinOp, Block, Expr, ExprKind, FuncBlock, Literal, NodeId, Stmt, StmtKind};
 use crate::ast::visit::AstVisitor;
-use crate::compile::visit::{Compiler, FrameCompiler};
-use crate::ty::{Ty, TyError};
+use crate::compile::visit::Compiler;
 use crate::ty::visit::TypeVisitor;
 use crate::vm::def::{CaptureDef, FunctionDef};
 
@@ -377,13 +377,7 @@ fn test_ast() {
             println!("Something borke")
         }
     }
-    let code_chunk = compile_code.current_frame.chunk.build();
-    println!("{:?}", code_chunk);
-    let source_file = SourceFile {
-        constant_pool: Vec::new(),
-        main_code: code_chunk,
-        functions: Vec::new(),
-    };
+    let source_file = compile_code.build();
 
     let mut vm = TailVirtualMachine::new(&source_file);
     vm.run();
@@ -673,10 +667,15 @@ fn if_test() {
     ];
 
 
+}
 
+fn run_code(code: impl FnOnce() -> Vec<Stmt>) {
+    debug::init_counter();
+    let stmts = code();
 
+    println!("Type checking...");
     let mut type_visitor = TypeVisitor::new();
-    for s in code.iter() {
+    for s in stmts.iter() {
         match type_visitor.visit_stmt(s) {
             Ok(ty) => {
                 let mut str = String::new();
@@ -692,25 +691,21 @@ fn if_test() {
     println!("Compiling...");
 
     let mut compiler = Compiler::new();
-    for s in code.iter() {
+    for s in stmts.iter() {
         compiler.visit_stmt(s).unwrap();
     }
     // this might be bad
-    let chunk = compiler.current_frame.chunk.build();
-    println!("Code: {:?}", chunk);
-    let file = SourceFile {
-        constant_pool: compiler.temp_map_constants(),
-        main_code: chunk,
-        functions: Vec::new(),
-    };
+    let source = compiler.build();
+
+    println!("Printing source file\n{}", source);
 
     println!("Executing...");
 
-    let mut vm = TailVirtualMachine::new(&file);
+    let mut vm = TailVirtualMachine::new(&source);
     vm.run();
 }
 
 
 fn main() {
-    if_test();
+    run_code(debug::closure_fun);
 }

@@ -3,26 +3,41 @@ use std::collections::HashMap;
 use std::rc::{Rc, Weak};
 use crate::ast::{BinOp, Block, Expr, ExprKind, FuncBlock, Identifier, Literal, Stmt, StmtKind, UOp};
 use crate::ast::visit::AstVisitor;
-use crate::compile::{CodeChunkBuilder, CompileError, RawConstantEntry, RawConstantKind};
+use crate::compile::{CodeChunkBuilder, CodeChunkIndex, CompileError, RawConstantEntry};
 use crate::vm;
-use crate::vm::{CodeChunk, Instruction};
-
+use crate::vm::{CodeChunk, Instruction, SourceFile};
+use crate::vm::def::{CaptureDef, FunctionDef};
 
 pub struct Compiler {
     constant_pool: HashMap<RawConstantEntry, usize>,
     next_pool_slot: usize,
-    pub current_frame: FrameCompiler,
     frame_stack: Vec<FrameCompiler>,
+    finished_code: HashMap<usize, CodeChunk>,
     next_global_slot: usize,
+    next_func_index: usize,
 }
 impl Compiler {
     pub fn new() -> Self {
         Self {
-            current_frame: FrameCompiler::new(true),
             constant_pool: HashMap::new(),
             next_pool_slot: 0,
             next_global_slot: 0,
-            frame_stack: Vec::new(),
+            frame_stack: vec![FrameCompiler::root()],
+            next_func_index: 0,
+            finished_code: HashMap::new(),
+        }
+    }
+
+
+    /// Gets the index for this constant in the raw constant pool. If it's not in the pool, add it.
+    pub fn get_or_insert_constant(&mut self, entry: RawConstantEntry) -> usize {
+        match self.constant_pool.get(&entry) {
+            Some(e) => *e,
+            None => {
+                let slot = self.reserve_pool_slot();
+                self.constant_pool.insert(entry, slot);
+                slot
+            }
         }
     }
 
@@ -39,6 +54,12 @@ impl Compiler {
 
     pub fn resolve_upvalue(&mut self, id: &Identifier) -> VarLoc {
         self._resolve_upvalue(self.frame_stack.len() - 1, id)
+    }
+
+    pub fn reserve_func_index(&mut self) -> usize {
+        let index = self.next_func_index;
+        self.next_func_index += 1;
+        index
     }
 
     fn _resolve_upvalue(&mut self, index: usize, id: &Identifier) -> VarLoc {
@@ -62,16 +83,50 @@ impl Compiler {
         self.frame_stack[index].reserve_upvalue(prev)
     }
 
+    pub fn frame(&mut self) -> &mut FrameCompiler {
+        self.frame_stack.last_mut().unwrap()
+    }
 
-    pub fn temp_map_constants(&self) -> Vec<vm::ConstantPoolEntry> {
-        let mut out = vec![];
-        let mut entries = self.constant_pool.iter().collect::<Vec<_>>();
+    pub fn push_frame(&mut self, index: usize) {
+        self.frame_stack.push(FrameCompiler::new(index));
+    }
+    pub fn pop_frame(&mut self) -> FrameCompiler {
+        // sanity check: can't pop the root
+        assert!(self.frame_stack.len() > 1);
+        self.frame_stack.pop().unwrap()
+    }
+
+    pub fn build(self) -> SourceFile {
+
+        // build constant pool
+        let mut constant_pool = Vec::new();
+        let mut entries = self.constant_pool.into_iter().collect::<Vec<_>>();
         entries.sort_by(|a, b| a.1.cmp(&b.1));
         for (k, v) in entries.into_iter() {
-            assert_eq!(*v, out.len());
-            out.push(k.clone().into())
+            assert_eq!(v, constant_pool.len());
+            constant_pool.push(k.into())
+        };
+
+        // build functions
+        let mut functions = Vec::new();
+        let mut entries = self.finished_code.into_iter().collect::<Vec<_>>();
+        entries.sort_by(|a, b| a.0.cmp(&b.0));
+        for (k, v) in entries.into_iter() {
+            assert_eq!(k, functions.len());
+            functions.push(v);
         }
-        out
+
+        // build main
+        let mut main = self.frame_stack;
+        assert_eq!(main.len(), 1);
+        let main = main.pop().unwrap().chunk.build();
+
+
+        SourceFile {
+            constant_pool,
+            main_code: main,
+            functions
+        }
     }
 }
 
@@ -82,20 +137,27 @@ impl Compiler {
 // compiles a single stack frame
 pub struct FrameCompiler {
     pub chunk: CodeChunkBuilder,
-    // if true, this is the root frame compiler. scope 0 = Global
-    is_root: bool,
     frame_variable_slots: HashMap<Identifier, LocStack>,
     upvalues: Vec<VarLoc>,
     next_var_slot: usize,
     scope_level: usize,
 }
 impl FrameCompiler {
-    pub fn new(is_root: bool) -> Self {
-        Self {
-            chunk: CodeChunkBuilder::new(),
 
+    // if true, this is the root frame compiler. scope 0 = Global
+    pub fn root() -> Self {
+        Self {
+            chunk: CodeChunkBuilder::root(),
             frame_variable_slots: HashMap::new(),
-            is_root,
+            next_var_slot: 0,
+            upvalues: Vec::new(),
+            scope_level: 0
+        }
+    }
+    pub fn new(func_index: usize) -> Self {
+        Self {
+            chunk: CodeChunkBuilder::new(func_index),
+            frame_variable_slots: HashMap::new(),
             next_var_slot: 0,
             upvalues: Vec::new(),
             scope_level: 0
@@ -115,6 +177,9 @@ impl FrameCompiler {
                     VarLoc::Local { slot: _, scope } => {
                         if self.scope_level < scope {
                             loc.pop();
+                        }
+                        else {
+                            break
                         }
                     }
                     _ => break
@@ -136,7 +201,22 @@ impl FrameCompiler {
         VarLoc::UpValue { slot: index }
     }
 
-    fn push_bop_instr(&mut self, bop: &BinOp) -> Result<(), CompileError> {
+    pub fn push_instr(&mut self, instruction: Instruction) -> usize {
+        let out = self.chunk.current_ip();
+        self.chunk.push_instr(instruction);
+        out
+    }
+
+    pub fn is_root(&self) -> bool {
+        self.chunk.is_root()
+    }
+
+    pub fn func_index(&self) -> CodeChunkIndex {
+        self.chunk.func_index()
+    }
+
+
+    fn _push_bop_instr(&mut self, bop: &BinOp) -> Result<(), CompileError> {
         // TODO: operator overloading :')
         let instrs = match bop {
             BinOp::Add => vec![Instruction::IAdd],
@@ -160,6 +240,8 @@ impl FrameCompiler {
     }
 }
 
+
+
 impl AstVisitor for Compiler {
     type ExprResult = Result<(), CompileError>;
 
@@ -175,17 +257,17 @@ impl AstVisitor for Compiler {
                 //      current scope < top scope: repeatedly pop until current >= top_scope
                 //      current scope = top scope: modify the slot to next available slot
                 //      current scope > top scope: push a new scope, store in next available slot
-                let current_scope = self.current_frame.scope_level;
-                let new_loc = if current_scope == 0 && self.current_frame.is_root {
+                let current_scope = self.frame().scope_level;
+                let new_loc = if current_scope == 0 && self.frame().is_root() {
                     VarLoc::Global { slot: self.reserve_global_slot() }
                 } else {
-                    VarLoc::Local { slot: self.current_frame.reserve_var_slot(), scope: current_scope }
+                    VarLoc::Local { slot: self.frame().reserve_var_slot(), scope: current_scope }
                 };
                 // if local not present, calculate it
-                if !self.current_frame.frame_variable_slots.contains_key(id) {
-                    self.current_frame.frame_variable_slots.insert(id.clone(), LocStack::new(new_loc));
+                if !self.frame().frame_variable_slots.contains_key(id) {
+                    self.frame().frame_variable_slots.insert(id.clone(), LocStack::new(new_loc));
                 }
-                let loc_stack = self.current_frame.frame_variable_slots.get_mut(id).unwrap();
+                let loc_stack = self.frame().frame_variable_slots.get_mut(id).unwrap();
                 match loc_stack.peek() {
                     // if current scope == top scope, just override instead of pushing a new thing
                     VarLoc::Local { slot: _, scope } if current_scope == scope => {
@@ -211,17 +293,66 @@ impl AstVisitor for Compiler {
                 };
 
                 // push it
-                self.current_frame.chunk.push_instr(instr);
+                self.frame().push_instr(instr);
                 Ok(())
 
             }
             StmtKind::Assign(place, body) => {
-                todo!()
+                let ExprKind::Ident(id) = &place.inner.kind else {
+                    panic!("This should never happen!")
+                };
+
+
+
+                // can't find identifier - resolve either a global or upvalue and store it.
+                if self.frame().frame_variable_slots.get_mut(id).is_none() {
+
+                    // could not find variable in the current scope - this is either global, or needs to be captured.
+                    let loc = self.resolve_upvalue(id);
+                    match loc {
+                        VarLoc::Global { .. } => {
+                            // we found a global. bind to environment for convenience and then compile instr
+                            self.frame().frame_variable_slots.insert(id.clone(), LocStack::new(loc));
+                        }
+                        _ => {
+                            let upvalue = self.frame().reserve_upvalue(loc);
+                            // bind the upvalue to the environment for later
+                            self.frame().frame_variable_slots.insert(id.clone(), LocStack::new(upvalue));
+
+                        }
+                    }
+                };
+                let loc = self.frame().frame_variable_slots.get(id).unwrap().peek();
+
+                // load only used if derefs
+                let (load, store) = match loc {
+                    VarLoc::Local { slot: 0, scope: _ } => (Instruction::Load0, Instruction::Load0),
+                    VarLoc::Local { slot: 1, scope: _ } => (Instruction::Load1, Instruction::Load1),
+                    VarLoc::Local { slot: 2, scope: _ } => (Instruction::Load2, Instruction::Load2),
+                    VarLoc::Local { slot: 3, scope: _ } => (Instruction::Load3, Instruction::Load3),
+                    VarLoc::Local { slot, scope: _ } => (Instruction::Load(slot), Instruction::Load(slot)),
+                    VarLoc::Global { slot: 0 } => (Instruction::GLoad0, Instruction::GLoad0),
+                    VarLoc::Global { slot: 1 } => (Instruction::GLoad1, Instruction::GLoad1),
+                    VarLoc::Global { slot: 2 } => (Instruction::GLoad2, Instruction::GLoad2),
+                    VarLoc::Global { slot: 3 } => (Instruction::GLoad3, Instruction::GLoad3),
+                    VarLoc::Global { slot } => (Instruction::GLoad(slot), Instruction::GLoad(slot)),
+                    VarLoc::UpValue { slot } => (Instruction::UpLoad(slot), Instruction::UpLoad(slot)),
+                };
+
+                if place.derefs > 0 {
+                    todo!("Derefs NYI")
+                }
+
+                self.visit_expr(body)?;
+                self.frame().push_instr(store);
+
+                Ok(())
+
             }
             // expressions are easy: just compile, then void the output (pop it off the stack)
             StmtKind::Expr(e) => {
                 self.visit_expr(e)?;
-                self.current_frame.chunk.push_instr(Instruction::Pop);
+                self.frame().push_instr(Instruction::Pop);
                 Ok(())
             }
             // returns are also easy: just compile the expr then push a "ret" instruction
@@ -229,7 +360,7 @@ impl AstVisitor for Compiler {
                 if let Some(e) = body {
                     self.visit_expr(e)?;
                 }
-                self.current_frame.chunk.push_instr(Instruction::Ret);
+                self.frame().push_instr(Instruction::Ret);
                 Ok(())
             }
         }
@@ -239,24 +370,24 @@ impl AstVisitor for Compiler {
         match &expr.kind {
             ExprKind::Ident(id) => {
                 // can't find identifier - resolve either a global or upvalue and store it.
-                if self.current_frame.frame_variable_slots.get_mut(id).is_none() {
+                if self.frame().frame_variable_slots.get_mut(id).is_none() {
 
                     // could not find variable in the current scope - this is either global, or needs to be captured.
                     let loc = self.resolve_upvalue(id);
                     match loc {
                         VarLoc::Global { .. } => {
                             // we found a global. bind to environment for convenience and then compile instr
-                            self.current_frame.frame_variable_slots.insert(id.clone(), LocStack::new(loc));
+                            self.frame().frame_variable_slots.insert(id.clone(), LocStack::new(loc));
                         }
                         _ => {
-                            let upvalue = self.current_frame.reserve_upvalue(loc);
+                            let upvalue = self.frame().reserve_upvalue(loc);
                             // bind the upvalue to the environment for later
-                            self.current_frame.frame_variable_slots.insert(id.clone(), LocStack::new(upvalue));
+                            self.frame().frame_variable_slots.insert(id.clone(), LocStack::new(upvalue));
 
                         }
                     }
                 };
-                let loc = self.current_frame.frame_variable_slots.get(id).unwrap().peek();
+                let loc = self.frame().frame_variable_slots.get(id).unwrap().peek();
                 let instr = match loc {
                     VarLoc::Local { slot: 0, scope: _ } => Instruction::Load0,
                     VarLoc::Local { slot: 1, scope: _ } => Instruction::Load1,
@@ -270,7 +401,7 @@ impl AstVisitor for Compiler {
                     VarLoc::Global { slot } => Instruction::GLoad(slot),
                     VarLoc::UpValue { slot } => Instruction::UpLoad(slot),
                 };
-                self.current_frame.chunk.push_instr(instr);
+                self.frame().push_instr(instr);
                 Ok(())
             },
             ExprKind::Lit(lit) => self.visit_literal(lit),
@@ -282,7 +413,7 @@ impl AstVisitor for Compiler {
                     // TODO: operator overloading
                     UOp::Neg => Instruction::INeg,
                 };
-                self.current_frame.chunk.push_instr(instr);
+                self.frame().push_instr(instr);
                 Ok(())
             },
 
@@ -290,40 +421,101 @@ impl AstVisitor for Compiler {
                 // TODO: Update calling convention to be left -> right not right -> left (unintuitive)
                 self.visit_expr(right)?;
                 self.visit_expr(left)?;
-                self.current_frame.push_bop_instr(bop)
+                self.frame()._push_bop_instr(bop)
             },
             ExprKind::If(cond, then_branch, else_branch) => {
                 self.visit_expr(cond)?;
                 // this is used to later write the correct jump address
-                let cond_jump_ip = self.current_frame.chunk.current_ip();
-                self.current_frame.chunk.push_instr(Instruction::JEq(0)); // temp address
+                let cond_jump_ip = self.frame().push_instr(Instruction::JEq(0)); // temp address
 
                 // compile then branch
                 self.visit_block(then_branch)?;
                 // also used later to write the correct jump address
-                let finish_jump_ip = self.current_frame.chunk.current_ip();
-                self.current_frame.chunk.push_instr(Instruction::Jump(0)); // temp address
+                let finish_jump_ip = self.frame().push_instr(Instruction::Jump(0)); // temp address
                 // compile else branch
                 self.visit_block(else_branch)?;
 
-                let end_if_ip = self.current_frame.chunk.current_ip();
+                let end_if_ip = self.frame().chunk.current_ip();
 
                 // finish_jump_ip + 1 = start of else branch
-                *self.current_frame.chunk.get_instr_mut(cond_jump_ip) = Instruction::JEq((finish_jump_ip + 1) as u16);
+                *self.frame().chunk.get_instr_mut(cond_jump_ip) = Instruction::JEq((finish_jump_ip + 1) as u16);
                 // end_if_ip = end of the if statement
-                *self.current_frame.chunk.get_instr_mut(finish_jump_ip) = Instruction::Jump(end_if_ip as u16);
+                *self.frame().chunk.get_instr_mut(finish_jump_ip) = Instruction::Jump(end_if_ip as u16);
 
                 Ok(())
             },
             ExprKind::Closure(name, args, body) => {
 
+                let next_index = self.reserve_func_index();
+                // make our function def and stick it in the constant pool
+                let def = RawConstantEntry::Function(FunctionDef {
+                    arity: args.len() as u8,
+                    code_chunk: next_index,
+                });
+                // grab the constant index
+                let constant_index = self.get_or_insert_constant(def);
 
+                // get the ip of the ClosPush instr.
+                // We need to late bind the upvalues so we push an empty set of upvalues
+                let clos_push_ip = self.frame().push_instr(Instruction::ClosPush(constant_index, vec![]));
+
+                // push a new frame compiler and compile the function body
+                // We also bind slots for self (if present) and args.
+                self.push_frame(next_index);
+                if let Some(name) = name {
+                    self.frame().frame_variable_slots.insert(name.clone(), LocStack::new(VarLoc::Local { slot: 0, scope: 0}));
+                }
+                for (i, a) in args.iter().enumerate() {
+                    self.frame().frame_variable_slots.insert(a.clone(), LocStack::new(VarLoc::Local { slot: i + 1, scope: 0 }));
+                }
+                // now we can finally compile the function block
+                self.visit_func_block(body)?;
+                // we've finished the body - let's pop off this frame compiler
+                // needs to be mut cuz build() swaps out the CodeChunkBuilder idk if theres a good way to do get around this
+                let mut old_frame = self.pop_frame();
+
+                // quick sanity check
+                debug_assert!(!old_frame.is_root());
+
+                let mut captured = Vec::new();
+                for up in old_frame.upvalues.iter() {
+                    match up {
+                        // we no longer care about scope info
+                        VarLoc::Local { slot, scope: _ } => captured.push(CaptureDef::local(*slot as u8)),
+                        VarLoc::UpValue { slot } => captured.push(CaptureDef::upvalue(*slot as u8)),
+                        // skip on globals - we don't need to capture them so.
+                        VarLoc::Global { .. } => {}
+                    }
+                }
+
+
+                // top frame now corresponds to the right frame :)
+                let Instruction::ClosPush(_, vec) = self.frame().chunk.get_instr_mut(clos_push_ip) else {
+                    panic!("Malformed code chunk! Should never happen")
+                };
+                // swap out
+                let _ = std::mem::replace(vec, captured);
+
+                // finally, build the code chunk and stick it in our finished chunks
+                self.finished_code.insert(next_index, old_frame.chunk.build());
+
+                // and we're done :)
                 Ok(())
             }
-            ExprKind::Call(_, _) => todo!(),
+            ExprKind::Call(func, args) => {
+                //TODO: update calling convention from left -> right
+
+                for a in args.iter().rev() {
+                    self.visit_expr(a)?;
+                }
+                self.visit_expr(func)?;
+                self.frame().push_instr(Instruction::Call);
+
+                Ok(())
+            },
             ExprKind::Ref(e) => {
                 self.visit_expr(e)?;
-                self.current_frame.chunk.push_instr(Instruction::Alloc);
+                self.frame().push_instr(Instruction::Alloc);
                 Ok(())
             },
             ExprKind::Block(block) => {
@@ -339,9 +531,15 @@ impl AstVisitor for Compiler {
     }
 
     fn visit_block(&mut self, block: &Block) -> Self::ExprResult {
-        self.current_frame.scope_level += 1;
-        for i in 0..block.stmts.len() {
-            let stmt = &block.stmts[i];
+        self.frame().scope_level += 1;
+
+
+        // if block is empty: push a () and thats it.
+        if block.stmts.is_empty() {
+            self.frame().push_instr(Instruction::IPush0);
+            return Ok(());
+        }
+        for (i, stmt) in block.stmts.iter().enumerate() {
             // if i is the last stmt and the stmt is an expr: just compile the expr without the pop
             // that way, the last value will still be on the stack - normally, expr; adds a pop expression so.
             if i == block.stmts.len() - 1 {
@@ -351,7 +549,7 @@ impl AstVisitor for Compiler {
                 else {
                     // just visit normally and push unit onto the stack
                     self.visit_stmt(stmt)?;
-                    self.current_frame.chunk.push_instr(Instruction::IPush0);
+                    self.frame().push_instr(Instruction::IPush0);
                 }
             }
             else {
@@ -359,17 +557,25 @@ impl AstVisitor for Compiler {
             }
         }
 
-        self.current_frame.scope_level -= 1;
-        let keys = self.current_frame.frame_variable_slots.keys().cloned().collect::<Vec<_>>();
+        self.frame().scope_level -= 1;
+        let keys = self.frame().frame_variable_slots.keys().cloned().collect::<Vec<_>>();
         for k in keys.iter() {
-            self.current_frame.trim_locs(k);
+            self.frame().trim_locs(k);
         }
         Ok(())
     }
 
-    // blocks create a *new* code chunk
+    // behaves largely the same as block but with a few key differences
+    // 1: final expressions are NOT kept on the stack
+    // 2: if the last instruction is not a Ret, we add a Ret to be safe. This should account for functions that return unit
     fn visit_func_block(&mut self, block: &FuncBlock) -> Self::ExprResult {
-        todo!()
+        for stmt in block.stmts.iter() {
+            self.visit_stmt(stmt)?;
+        }
+        if self.frame().chunk.is_empty() || !matches!(self.frame().chunk.last(), Instruction::Ret) {
+            self.frame().push_instr(Instruction::Ret);
+        }
+        Ok(())
     }
 
     // literals are pretty simple: read a value from the constant pool (add it if it doesnt exist)
@@ -387,26 +593,21 @@ impl AstVisitor for Compiler {
             Literal::Int(i) if *i > 5 && *i < 32768 => Instruction::IPush(*i as u16),
             Literal::Int(i) => {
                 // if else, we need to load this into the constant pool
-                let entry = RawConstantEntry {
-                data: (*i).to_string(),
-                    kind: RawConstantKind::Int,
-                };
+                let entry = RawConstantEntry::Int(*i);
 
-                // if entry doesn't exist, add it.
-                if !self.constant_pool.contains_key(&entry) {
-                    let slot = self.reserve_pool_slot();
-                    self.constant_pool.insert(entry.clone(), slot);
-                }
+                // Get the index of this constant
+                let constant_index = self.get_or_insert_constant(entry);
 
-                Instruction::Ldc(self.constant_pool.get(&entry).unwrap().clone())
+                Instruction::Ldc(constant_index)
             }
             Literal::Float(f) => todo!(),
             Literal::Char(c) => todo!(),
             Literal::Str(s) => todo!(),
             Literal::Bool(true) => Instruction::IPush1,
             Literal::Bool(false) => Instruction::IPush0,
+            Literal::Unit => Instruction::IPush0,
         };
-        self.current_frame.chunk.push_instr(instr);
+        self.frame().push_instr(instr);
         Ok(())
     }
 }

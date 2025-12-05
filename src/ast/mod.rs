@@ -75,6 +75,7 @@ pub enum Literal {
     Char(char),
     Str(String),
     Bool(bool),
+    Unit,
 }
 
 #[derive(Debug)]

@@ -234,6 +234,7 @@ impl AstVisitor for TypeVisitor {
             Literal::Char(_) => self.ctxt.common_types.char.clone(),
             Literal::Str(_) => panic!("Strings NYI"),
             Literal::Bool(_) => self.ctxt.common_types.bool.clone(),
+            Literal::Unit => self.ctxt.common_types.unit.clone(),
         })
     }
 }
