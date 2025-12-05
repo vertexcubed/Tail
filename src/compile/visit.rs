@@ -360,6 +360,9 @@ impl AstVisitor for Compiler {
                 if let Some(e) = body {
                     self.visit_expr(e)?;
                 }
+                else {
+                    self.frame().push_instr(Instruction::IPush0);
+                }
                 self.frame().push_instr(Instruction::Ret);
                 Ok(())
             }
@@ -572,6 +575,7 @@ impl AstVisitor for Compiler {
             self.visit_stmt(stmt)?;
         }
         if self.frame().chunk.is_empty() || !matches!(self.frame().chunk.last(), Instruction::Ret) {
+            self.frame().push_instr(Instruction::IPush0);
             self.frame().push_instr(Instruction::Ret);
         }
         Ok(())

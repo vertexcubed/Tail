@@ -423,6 +423,7 @@ impl <'src> TailVirtualMachine<'src> {
         println!("Call Stack: {:?}", self.call_stack);
         println!("Globals: {:?}", self.globals);
         println!("Current locals: {:?}", self.call_stack.last().unwrap().slots);
+        println!("Upvalues: {:?}", self.upvalues)
     }
     
     fn read_as_int(&self, value: &StackValue) -> i64 {

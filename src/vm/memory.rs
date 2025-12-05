@@ -39,7 +39,7 @@ impl  Heap {
 }
 
 
-
+#[derive(Debug, Clone)]
 pub struct UpValueStorage {
     upvalues: Vec<UpValue>,
     open_upvalues: HashMap<StackLoc, usize>

@@ -299,7 +299,7 @@ pub fn higher_order_closures() -> Vec<Stmt> {
 
         _let("a", _call("make", vec![])),
         _let("b", _call("make", vec![])),
-        _call("a", vec![]).into(),
+        // _call("a", vec![]).into(),
         _call("a", vec![]).into(),
         _call("b", vec![]).into(),
         _call("b", vec![]).into(),
