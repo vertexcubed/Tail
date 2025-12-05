@@ -1,5 +1,5 @@
-use std::fmt::{Display, Formatter};
 use crate::impl_id;
+use std::fmt::{Display, Formatter};
 
 pub mod visit;
 

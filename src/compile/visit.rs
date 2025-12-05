@@ -1,12 +1,9 @@
-use std::cell::RefCell;
-use std::collections::HashMap;
-use std::rc::{Rc, Weak};
-use crate::ast::{BinOp, Block, Expr, ExprKind, FuncBlock, Identifier, Literal, Stmt, StmtKind, UOp};
 use crate::ast::visit::AstVisitor;
+use crate::ast::{BinOp, Block, Expr, ExprKind, FuncBlock, Identifier, Literal, Stmt, StmtKind, UOp};
 use crate::compile::{CodeChunkBuilder, CodeChunkIndex, CompileError, RawConstantEntry};
-use crate::vm;
-use crate::vm::{CodeChunk, Instruction, SourceFile};
 use crate::vm::def::{CaptureDef, FunctionDef};
+use crate::vm::{CodeChunk, Instruction, SourceFile};
+use std::collections::HashMap;
 
 pub struct Compiler {
     constant_pool: HashMap<RawConstantEntry, usize>,

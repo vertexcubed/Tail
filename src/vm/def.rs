@@ -1,6 +1,6 @@
+use crate::vm::{Address, Identifier, TypeIdentifier};
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
-use crate::vm::{Address, Identifier, TypeIdentifier};
 
 
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]

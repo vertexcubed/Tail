@@ -1,6 +1,6 @@
-use std::collections::HashMap;
-use crate::vm::{StackValue, UpValue};
 use crate::vm::def::StackLoc;
+use crate::vm::{StackValue, UpValue};
+use std::collections::HashMap;
 
 pub type MemoryAddress = usize;
 

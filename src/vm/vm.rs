@@ -1,8 +1,8 @@
-use std::rc::Rc;
-use log::error;
-use crate::vm::{CodeChunk, ConstantPoolEntry, Instruction, SourceFile, StackFrame, StackSlot, StackValue, StructValue, UpValue};
 use crate::vm::def::StackLoc;
 use crate::vm::memory::{Heap, UpValueStorage};
+use crate::vm::{CodeChunk, ConstantPoolEntry, Instruction, SourceFile, StackFrame, StackSlot, StackValue, StructValue, UpValue};
+use log::error;
+use std::rc::Rc;
 
 
 // src is the lifetime of the source file.
@@ -417,6 +417,9 @@ impl <'src> TailVirtualMachine<'src> {
             ip = next_ip.unwrap();
             code_chunk = self.call_stack.last().unwrap().code_chunk;
         }
+    }
+
+    pub fn _print_state(&self) {
         println!("Op Stack: {:?}", self.op_stack);
         println!("Heap: {:?}", self.heap);
         println!("Call Stack: {:?}", self.call_stack);

@@ -1,9 +1,9 @@
+use crate::ast::Identifier;
+use crate::impl_id;
+use crate::ty::infer::InferCtxt;
 use std::collections::{HashMap, VecDeque};
 use std::fmt::{Display, Formatter};
 use std::ops::{Add, Sub};
-use crate::ast::{Identifier, NodeId};
-use crate::impl_id;
-use crate::ty::infer::InferCtxt;
 
 pub mod visit;
 pub mod infer;

@@ -1,7 +1,7 @@
-use std::collections::HashMap;
-use crate::ast::{BinOp, Block, Expr, ExprKind, FuncBlock, Identifier, Literal, NodeId, Stmt, StmtKind, UOp};
 use crate::ast::visit::AstVisitor;
+use crate::ast::{BinOp, Block, Expr, ExprKind, FuncBlock, Identifier, Literal, NodeId, Stmt, StmtKind, UOp};
 use crate::ty::{Ty, TyCtxt, TyError};
+use std::collections::HashMap;
 
 #[derive(Debug)]
 pub struct TypeVisitor {
@@ -43,7 +43,7 @@ impl AstVisitor for TypeVisitor {
             StmtKind::Let(iden, body) => {
                 let body_ty = self.visit_expr(body)?;
 
-                // TODO: let polymorphism, shadow check
+                // TODO: let polymorphism
                 self.ctxt.bind(iden.clone(), body_ty.clone());
                 self.set_type_of_expr(stmt.id, self.ctxt.common_types.unit.clone());
 

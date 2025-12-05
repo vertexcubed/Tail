@@ -1,5 +1,5 @@
+use crate::ty::{InferTy, Ty, TyId, TyKind, UnifyError};
 use std::collections::HashMap;
-use crate::ty::{InferTy, Ty, TyError, TyId, TyKind, UnifyError};
 
 #[derive(Debug)]
 pub struct InferCtxt {

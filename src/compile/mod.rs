@@ -1,6 +1,6 @@
-use std::rc::Rc;
-use crate::vm::{CodeChunk, ConstantPoolEntry, Instruction};
 use crate::vm::def::FunctionDef;
+use crate::vm::{CodeChunk, ConstantPoolEntry, Instruction};
+use std::rc::Rc;
 
 pub mod visit;
 

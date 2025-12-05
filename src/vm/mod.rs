@@ -1,8 +1,8 @@
+use crate::vm::def::{CaptureDef, FunctionDef, StackLoc, StructDef};
+use crate::vm::memory::MemoryAddress;
 use std::fmt::{Display, Formatter};
 use std::ops::{Deref, DerefMut, Index, IndexMut};
 use std::rc::Rc;
-use crate::vm::def::{CaptureDef, FunctionDef, StackLoc, StructDef};
-use crate::vm::memory::MemoryAddress;
 
 pub mod vm;
 pub mod memory;
