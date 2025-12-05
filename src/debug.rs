@@ -252,7 +252,7 @@ pub fn factorial() -> Vec<Stmt> {
 
 
 
-pub fn closure_fun() -> Vec<Stmt> {
+pub fn basic_closure() -> Vec<Stmt> {
     vec![
         _func("foo", vec![], vec![
             _ret(_int(-10))
@@ -282,5 +282,28 @@ pub fn closure_fun() -> Vec<Stmt> {
             _let("meow", _call("foo", vec![])),
             _let("meow", _call("bar", vec![])),
         ]).into(),
+    ]
+}
+
+
+pub fn higher_order_closures() -> Vec<Stmt> {
+    vec![
+        _func("make", vec![], vec![
+            _let("a", _int(3)),
+            _func("inner", vec![], vec![
+                _assign("a", _ident("a")._add(_int(2))),
+            ]),
+            _ret(_ident("inner"))
+        ]),
+
+
+        _let("a", _call("make", vec![])),
+        _let("b", _call("make", vec![])),
+        _call("a", vec![]).into(),
+        _call("a", vec![]).into(),
+        _call("b", vec![]).into(),
+        _call("b", vec![]).into(),
+        _call("a", vec![]).into(),
+        _call("b", vec![]).into(),
     ]
 }

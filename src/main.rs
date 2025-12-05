@@ -687,6 +687,11 @@ fn run_code(code: impl FnOnce() -> Vec<Stmt>) {
             }
         }
     }
+    for (id, ty) in type_visitor.ctxt.bindings().clone().into_iter() {
+        let mut str = String::new();
+        let _ = type_visitor.ctxt.write_ty(&ty, &mut str);
+        println!("val {}: {}", id, str);
+    }
 
     println!("Compiling...");
 
@@ -707,5 +712,5 @@ fn run_code(code: impl FnOnce() -> Vec<Stmt>) {
 
 
 fn main() {
-    run_code(debug::closure_fun);
+    run_code(debug::higher_order_closures);
 }

@@ -80,7 +80,7 @@ impl Compiler {
         }
         // reserve an upvalue and return it
         // can't use frame because of multiple mutable refs
-        self.frame_stack[index].reserve_upvalue(prev)
+        self.frame_stack[index].add_upvalue(prev)
     }
 
     pub fn frame(&mut self) -> &mut FrameCompiler {
@@ -192,7 +192,7 @@ impl FrameCompiler {
     }
 
     // guaranteed to never be a Global
-    pub fn reserve_upvalue(&mut self, loc: VarLoc) -> VarLoc {
+    pub fn add_upvalue(&mut self, loc: VarLoc) -> VarLoc {
         if let VarLoc::Global {..} = loc {
             panic!("Can't reserve an upvalue for a global loc. Should never happen")
         }
@@ -307,6 +307,7 @@ impl AstVisitor for Compiler {
                 // can't find identifier - resolve either a global or upvalue and store it.
                 if self.frame().frame_variable_slots.get_mut(id).is_none() {
 
+                    1;
                     // could not find variable in the current scope - this is either global, or needs to be captured.
                     let loc = self.resolve_upvalue(id);
                     match loc {
@@ -315,9 +316,8 @@ impl AstVisitor for Compiler {
                             self.frame().frame_variable_slots.insert(id.clone(), LocStack::new(loc));
                         }
                         _ => {
-                            let upvalue = self.frame().reserve_upvalue(loc);
                             // bind the upvalue to the environment for later
-                            self.frame().frame_variable_slots.insert(id.clone(), LocStack::new(upvalue));
+                            self.frame().frame_variable_slots.insert(id.clone(), LocStack::new(loc));
 
                         }
                     }
@@ -326,17 +326,17 @@ impl AstVisitor for Compiler {
 
                 // load only used if derefs
                 let (load, store) = match loc {
-                    VarLoc::Local { slot: 0, scope: _ } => (Instruction::Load0, Instruction::Load0),
-                    VarLoc::Local { slot: 1, scope: _ } => (Instruction::Load1, Instruction::Load1),
-                    VarLoc::Local { slot: 2, scope: _ } => (Instruction::Load2, Instruction::Load2),
-                    VarLoc::Local { slot: 3, scope: _ } => (Instruction::Load3, Instruction::Load3),
-                    VarLoc::Local { slot, scope: _ } => (Instruction::Load(slot), Instruction::Load(slot)),
-                    VarLoc::Global { slot: 0 } => (Instruction::GLoad0, Instruction::GLoad0),
-                    VarLoc::Global { slot: 1 } => (Instruction::GLoad1, Instruction::GLoad1),
-                    VarLoc::Global { slot: 2 } => (Instruction::GLoad2, Instruction::GLoad2),
-                    VarLoc::Global { slot: 3 } => (Instruction::GLoad3, Instruction::GLoad3),
-                    VarLoc::Global { slot } => (Instruction::GLoad(slot), Instruction::GLoad(slot)),
-                    VarLoc::UpValue { slot } => (Instruction::UpLoad(slot), Instruction::UpLoad(slot)),
+                    VarLoc::Local { slot: 0, scope: _ } => (Instruction::Load0, Instruction::Store0),
+                    VarLoc::Local { slot: 1, scope: _ } => (Instruction::Load1, Instruction::Store1),
+                    VarLoc::Local { slot: 2, scope: _ } => (Instruction::Load2, Instruction::Store2),
+                    VarLoc::Local { slot: 3, scope: _ } => (Instruction::Load3, Instruction::Store3),
+                    VarLoc::Local { slot, scope: _ } => (Instruction::Load(slot), Instruction::Store(slot)),
+                    VarLoc::Global { slot: 0 } => (Instruction::GLoad0, Instruction::GStore0),
+                    VarLoc::Global { slot: 1 } => (Instruction::GLoad1, Instruction::GStore1),
+                    VarLoc::Global { slot: 2 } => (Instruction::GLoad2, Instruction::GStore2),
+                    VarLoc::Global { slot: 3 } => (Instruction::GLoad3, Instruction::GStore3),
+                    VarLoc::Global { slot } => (Instruction::GLoad(slot), Instruction::GStore(slot)),
+                    VarLoc::UpValue { slot } => (Instruction::UpLoad(slot), Instruction::UpStore(slot)),
                 };
 
                 if place.derefs > 0 {
@@ -380,9 +380,8 @@ impl AstVisitor for Compiler {
                             self.frame().frame_variable_slots.insert(id.clone(), LocStack::new(loc));
                         }
                         _ => {
-                            let upvalue = self.frame().reserve_upvalue(loc);
                             // bind the upvalue to the environment for later
-                            self.frame().frame_variable_slots.insert(id.clone(), LocStack::new(upvalue));
+                            self.frame().frame_variable_slots.insert(id.clone(), LocStack::new(loc));
 
                         }
                     }

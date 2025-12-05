@@ -154,6 +154,10 @@ impl TyCtxt {
         self.local.get_binding(id)
     }
 
+    pub fn bindings(&self) -> &HashMap<Identifier, Ty> {
+        &self.local.bindings
+    }
+    
     pub fn unify(&mut self, left: &Ty, right: &Ty) -> Result<(), TyError> {
         self.infer_ctxt.unify(left, right).map_err(|u| TyError::InvalidTy(u))
     }
