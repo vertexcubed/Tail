@@ -48,7 +48,7 @@ impl  StructValue {
 #[derive(Debug, Clone)]
 pub enum UpValue {
     Open(StackLoc),
-    Closed(StackValue)
+    Closed(MemoryAddress)
 }
 
 

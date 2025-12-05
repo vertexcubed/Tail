@@ -677,13 +677,11 @@ fn run_code(code: impl FnOnce() -> Vec<Stmt>) {
     let mut type_visitor = TypeVisitor::new();
     for s in stmts.iter() {
         match type_visitor.visit_stmt(s) {
-            Ok(ty) => {
-                let mut str = String::new();
-                let _ = type_visitor.ctxt.write_ty(&ty, &mut str);
-                println!("{}", str);
-            }
+            // almost always this is unit so its not actually that useful
+            Ok(_) => {}
             Err(e) => {
-                println!("{}", e)
+                println!("{}", e);
+                return;
             }
         }
     }
@@ -712,5 +710,5 @@ fn run_code(code: impl FnOnce() -> Vec<Stmt>) {
 
 
 fn main() {
-    run_code(debug::higher_order_closures);
+    run_code(debug::basic_refs);
 }

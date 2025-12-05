@@ -59,7 +59,7 @@ pub enum InferTy {
 
 #[derive(thiserror::Error, Debug, Clone)]
 pub enum TyError {
-    #[error("Unification error")]
+    #[error("Unification error: {0}")]
     InvalidTy(#[from] UnifyError),
     #[error("Unbound variable: {0}")]
     UnboundVar(Identifier)

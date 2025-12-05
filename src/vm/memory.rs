@@ -72,7 +72,7 @@ impl UpValueStorage {
         &mut self.upvalues[index]
     }
 
-    pub fn close_upvalue(&mut self, index: usize, value: StackValue) {
+    pub fn close_upvalue(&mut self, index: usize, value: MemoryAddress) {
         match &self.upvalues[index] {
             UpValue::Open(loc) => {
                 self.open_upvalues.remove(loc);

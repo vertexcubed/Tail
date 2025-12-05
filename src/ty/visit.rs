@@ -50,15 +50,26 @@ impl AstVisitor for TypeVisitor {
                 Ok(self.ctxt.common_types.unit.clone())
             }
             StmtKind::Assign(place, body) => {
-                // TODO: derefs, struct field lookup
+                // TODO struct field lookup
                 
                 let ExprKind::Ident(iden) = &place.inner.kind else {
                     unreachable!("Parser should prevent this from happening")
                 };
 
-                let old_ty = self.visit_ident(iden)?;
+
+                // type of the identifier. if this is a ref, it may be ref int
+                let derefed_ty = self.ctxt.new_type_var();
+                let mut place_ty = derefed_ty.clone();
+                for _ in 0..place.derefs {
+                    place_ty = self.ctxt.new_ref_ty(place_ty);
+                }
+                let inner = self.visit_ident(iden)?;
+                self.ctxt.unify(&inner, &place_ty)?;
+
+
+
                 let body_ty = self.visit_expr(body)?;
-                self.ctxt.unify(&old_ty, &body_ty)?;
+                self.ctxt.unify(&derefed_ty, &body_ty)?;
 
                 self.ctxt.bind(iden.clone(), body_ty.clone());
                 self.set_type_of_expr(stmt.id, self.ctxt.common_types.unit.clone());

@@ -219,7 +219,19 @@ fn _deref(inner: Expr, num_derefs: usize) -> PlaceExpr {
 fn _place(ident: &str) -> PlaceExpr {
     _deref(_ident(ident), 0)
 }
-
+impl PlaceExpr {
+    fn _as_expr(self) -> Expr {
+        Expr {
+            id: _new_id(),
+            kind: ExprKind::Place(self)
+        }
+    }
+}
+impl Into<Expr> for PlaceExpr {
+    fn into(self) -> Expr {
+        self._as_expr()
+    }
+}
 
 
 
@@ -250,6 +262,22 @@ pub fn factorial() -> Vec<Stmt> {
 }
 
 
+pub fn basic_refs() -> Vec<Stmt> {
+    vec![
+        _func("addtwo", vec!["val"], vec![
+            _ass_place(
+                _deref(_ident("val"), 1),
+                _deref(_ident("val"), 1)._as_expr()._add(_int(2))),
+        ]),
+
+        _let("a", _ref(_int(2))),
+        _let("b", _ref(_int(3))),
+        _call("addtwo", vec![_ident("a")]).into(),
+        _call("addtwo", vec![_ident("b")]).into(),
+        _call("addtwo", vec![_ident("b")]).into(),
+        _call("addtwo", vec![_ident("a")]).into(),
+    ]
+}
 
 
 pub fn basic_closure() -> Vec<Stmt> {

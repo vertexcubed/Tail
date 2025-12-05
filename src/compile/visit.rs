@@ -306,8 +306,6 @@ impl AstVisitor for Compiler {
 
                 // can't find identifier - resolve either a global or upvalue and store it.
                 if self.frame().frame_variable_slots.get_mut(id).is_none() {
-
-                    1;
                     // could not find variable in the current scope - this is either global, or needs to be captured.
                     let loc = self.resolve_upvalue(id);
                     match loc {
@@ -340,11 +338,17 @@ impl AstVisitor for Compiler {
                 };
 
                 if place.derefs > 0 {
-                    todo!("Derefs NYI")
+                    self.frame().push_instr(load);
+                    for _ in 0..place.derefs - 1 {
+                        self.frame().push_instr(Instruction::Deref);
+                    }
+                    self.visit_expr(body)?;
+                    self.frame().push_instr(Instruction::Write);
                 }
-
-                self.visit_expr(body)?;
-                self.frame().push_instr(store);
+                else {
+                    self.visit_expr(body)?;
+                    self.frame().push_instr(store);
+                }
 
                 Ok(())
 
@@ -524,7 +528,14 @@ impl AstVisitor for Compiler {
                 self.visit_block(block)
             },
             ExprKind::Struct(_) => todo!(),
-            ExprKind::Place(_) => todo!(),
+            ExprKind::Place(p) => {
+
+                self.visit_expr(p.inner.as_ref())?;
+                for _ in 0..p.derefs {
+                    self.frame().push_instr(Instruction::Deref);
+                }
+                Ok(())
+            },
         }
     }
 

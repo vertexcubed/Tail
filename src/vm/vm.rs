@@ -302,7 +302,6 @@ impl <'src> TailVirtualMachine<'src> {
                         _ => panic!("Can't deref non reference!")
                     };
                     self.heap.write(addr, value);
-                    self.push(StackValue::Ref(addr));
                 }
                 Instruction::Pop => {
                     //discard
@@ -393,9 +392,9 @@ impl <'src> TailVirtualMachine<'src> {
                     // ugly to prevent multiple mut references :')
                     let value = self.pop();
                     let upvalue_index = self.local_upvalue_idx(*index);
-                    let upvalue = self.upvalues.get_mut(upvalue_index);
+                    let upvalue = self.upvalues.get(upvalue_index);
                     if let UpValue::Closed(old_value) = upvalue {
-                        *old_value = value;
+                        self.heap.write(*old_value, value);
                         break 'upstore;
                     }
                     let UpValue::Open(loc) = upvalue.clone() else {
@@ -406,7 +405,7 @@ impl <'src> TailVirtualMachine<'src> {
                 Instruction::UpLoad(index) => {
                     let upvalue_index = self.local_upvalue_idx(*index);
                     let to_push = match self.upvalues.get(upvalue_index) {
-                        UpValue::Closed(value) => value.clone(),
+                        UpValue::Closed(value) => self.heap.read(value.clone()).clone(),
                         UpValue::Open(loc) => self.load_loc(loc)
                     };
                     self.push(to_push);
@@ -534,7 +533,10 @@ impl <'src> TailVirtualMachine<'src> {
         // this local was captured. close the upvalue
         let upvalue_index = slot.upvalue_slot().unwrap();
         let data: StackValue = slot.into();
-        self.upvalues.close_upvalue(upvalue_index, data);
+        let heap_addr = self.heap.alloc(data);
+
+
+        self.upvalues.close_upvalue(upvalue_index, heap_addr);
     }
 
     /// get or create an upvalue for a local variable. If it already exists, we return the index instead of making a new one.
