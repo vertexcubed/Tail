@@ -1,5 +1,5 @@
 use crate::vm::def::StackLoc;
-use crate::vm::{InstructionAddress, CodeChunk, StackSlot, StackValue, UpValue};
+use crate::vm::{InstructionAddress, StackSlot, StackValue, UpValue};
 use std::collections::HashMap;
 use std::ops::Range;
 use std::rc::Rc;
@@ -113,8 +113,8 @@ impl CallFrame {
 }
 
 
-const MAX_STACK_SIZE: usize = 1024 * 1024 * 8 / 32;
-const MAX_FRAMES: usize = 1024;
+pub const MAX_STACK_SIZE: usize = 1024 * 1024 * 8 / 32;
+pub const MAX_FRAMES: usize = 1024;
 
 pub struct CallStack {
     data: Box<[Option<StackSlot>]>,
@@ -225,6 +225,8 @@ impl CallStack {
     fn _top_mut(&mut self) -> &mut CallFrame {
         self.call_frames[self.frame_pointer].as_mut().unwrap()
     }
+
+    fn print_locals(&self) {}
 }
 
 

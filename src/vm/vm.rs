@@ -1,6 +1,6 @@
 use crate::vm::def::{FunctionDef, StackLoc};
-use crate::vm::memory::{CallFrame, CallStack, Heap, UpValueStorage};
-use crate::vm::{CodeChunk, ConstantPoolEntry, Instruction, InstructionAddress, SourceFile, StackFrame, StackSlot, StackValue, StructValue, UpValue};
+use crate::vm::memory::{CallStack, Heap, UpValueStorage};
+use crate::vm::{ConstantPoolEntry, Instruction, InstructionAddress, SourceFile, StackSlot, StackValue, StructValue, UpValue};
 use log::error;
 use std::rc::Rc;
 
@@ -21,8 +21,8 @@ impl <'src> TailVirtualMachine<'src> {
     pub fn new(source_file: &'src SourceFile) -> Self {
         Self {
             source_file,
-            op_stack: Vec::with_capacity(128),
-            globals: vec![None; 8],
+            op_stack: Vec::with_capacity(1024 * 1024),
+            globals: vec![None; 256],
             upvalues: UpValueStorage::new(),
             heap: Heap::new(),
             call_stack: CallStack::new(),
@@ -33,7 +33,7 @@ impl <'src> TailVirtualMachine<'src> {
         let mut ip = 0;
 
         let mut code_chunk = self.source_file.get_main_code();
-        while(ip < code_chunk.data.len()) {
+        while ip < code_chunk.data.len() {
             let mut next_ip = None;
 
             // println!("{:?}", code_chunk[ip]);
@@ -278,7 +278,7 @@ impl <'src> TailVirtualMachine<'src> {
                     self.push(StackValue::Struct(strukt));
                 }
                 Instruction::GetFieldInd(index) => {
-                    let pointer = match(self.pop()) {
+                    let pointer = match self.pop() {
                         StackValue::Ref(addr) => match self.heap.read(addr) {
                             StackValue::Struct(strukt) => strukt,
                             _ => panic!("Can't get field of non struct!")
@@ -448,8 +448,24 @@ impl <'src> TailVirtualMachine<'src> {
     pub fn _print_state(&self) {
         println!("Op Stack: {:?}", self.op_stack);
         println!("Heap: {:?}", self.heap);
-        // println!("Call Stack: {:?}", self.call_stack);
-        println!("Globals: {:?}", self.globals);
+        let mut local_str = String::from("Locals: [ | ");
+        for (i, g) in self.call_stack.slot_iter().enumerate() {
+            if !g.is_none() {
+                local_str.push_str(format!("{}: {:?} | ", i, g.as_ref().unwrap().data).as_str());
+            }
+        }
+        local_str.push_str("]");
+        println!("{}", local_str);
+
+        let mut global_str = String::from("Globals: [ | ");
+        for (i, g) in self.globals.iter().enumerate() {
+            if !g.is_none() {
+                global_str.push_str(format!("{}: {:?} | ", i, g.as_ref().unwrap()).as_str());
+            }
+        }
+        global_str.push_str("]");
+        println!("{}", global_str);
+
         // println!("Current locals: {:?}", self.call_stack.last().unwrap().slots);
         println!("Upvalues: {:?}", self.upvalues)
     }
@@ -515,7 +531,7 @@ impl <'src> TailVirtualMachine<'src> {
     fn store_global(&mut self, index: usize, value: StackValue) {
         // resize if needed
         let size = self.globals.len();
-        if(index > size) {
+        if index > size {
             let new_size = f64::log2(index as f64 / size as f64).ceil() as usize;
             self.globals.resize(new_size, None);
         }

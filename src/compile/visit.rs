@@ -139,6 +139,7 @@ pub struct FrameCompiler {
     next_var_slot: usize,
     scope_level: usize,
 }
+#[allow(dead_code)]
 impl FrameCompiler {
 
     // if true, this is the root frame compiler. scope 0 = Global
@@ -536,7 +537,7 @@ impl AstVisitor for Compiler {
         }
     }
 
-    fn visit_ident(&mut self, ident: &Identifier) -> Self::ExprResult {
+    fn visit_ident(&mut self, _: &Identifier) -> Self::ExprResult {
         unreachable!("Unused")
     }
 
@@ -611,9 +612,9 @@ impl AstVisitor for Compiler {
 
                 Instruction::Ldc(constant_index)
             }
-            Literal::Float(f) => todo!(),
-            Literal::Char(c) => todo!(),
-            Literal::Str(s) => todo!(),
+            Literal::Float(_f) => todo!(),
+            Literal::Char(_c) => todo!(),
+            Literal::Str(_s) => todo!(),
             Literal::Bool(true) => Instruction::IPush1,
             Literal::Bool(false) => Instruction::IPush0,
             Literal::Unit => Instruction::IPush0,

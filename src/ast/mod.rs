@@ -17,7 +17,7 @@ impl Display for Identifier {
     }
 }
 
-
+/// Represents a singular expression. Has an ID and a kind
 #[derive(Debug)]
 pub struct Expr {
     pub id: NodeId,
@@ -25,21 +25,34 @@ pub struct Expr {
     // pub span: Span,
 }
 
+// TODO: NYI
 #[derive(Debug)]
 pub struct Span;
 
 #[derive(Debug)]
 pub enum ExprKind {
+    /// A literal.
     Lit(Literal),
+    /// A variable identifier
     Ident(Identifier),
+    /// A Unary operator, such as Negate or Not.
     UnaryOp(UOp, Box<Expr>),
+    /// A binary operator, such as Add or Sub.
     BinaryOp(BinOp, Box<Expr>, Box<Expr>),
+    /// An if statement. If statements are expressions, meaning they return values.
+    /// No need for a ternary operator because of this.
     If(Box<Expr>, Box<Block>, Box<Block>),
+    /// A closure/function definition. Identifier is None for anonymous lambdas and corresponds to the function name in let bound closures.
     Closure(Option<Identifier>, Vec<Identifier>, Box<FuncBlock>),
+    /// Function application. Tail does not support currying.
     Call(Box<Expr>, Vec<Expr>),
+    /// The reference operator.
     Ref(Box<Expr>),
+    /// A block of statements.
     Block(Box<Block>),
+    /// A struct constructor
     Struct(StructExpr),
+    /// A place expression, i.e. Derefs and struct lookups.
     Place(PlaceExpr)
 }
 
@@ -83,6 +96,7 @@ pub struct Block {
     pub stmts: Vec<Stmt>
 }
 
+/// A FuncBlock differs from regular blocks in that the last expression is not the type of the block, rather it's the type of return statements in the block.
 #[derive(Debug)]
 pub struct FuncBlock {
     pub stmts: Vec<Stmt>
@@ -98,9 +112,13 @@ pub struct Stmt {
 
 #[derive(Debug)]
 pub enum StmtKind {
+    /// Let expressions.
     Let(Identifier, Box<Expr>),
+    /// Assignment operations.
     Assign(PlaceExpr, Box<Expr>),
+    /// A singular expression where the value is discarded.
     Expr(Box<Expr>),
+    /// A return call. None for Unit functions
     Ret(Option<Box<Expr>>),
 }
 

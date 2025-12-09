@@ -1,5 +1,6 @@
 use crate::ast::*;
 
+/// An AST Visitor. This is heavily subject to change as I figure out a better way of implementing the visitor pattern in Rust
 pub trait AstVisitor {
     type ExprResult;
     fn visit_stmt(&mut self, stmt: &Stmt) -> Self::ExprResult;

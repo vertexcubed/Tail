@@ -1,14 +1,17 @@
 use crate::vm::def::{CaptureDef, FunctionDef, StackLoc, StructDef};
 use crate::vm::memory::MemoryAddress;
 use std::fmt::{Display, Formatter};
-use std::ops::{Deref, DerefMut, Index, IndexMut};
+use std::ops::{Deref, DerefMut, Index};
 use std::rc::Rc;
 
 pub mod vm;
+#[allow(dead_code)]
 pub mod memory;
+#[allow(dead_code)]
 pub mod def;
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub enum StackValue {
     Int(i64),
     Float(f64),
@@ -77,74 +80,13 @@ pub type InstructionAddress = usize;
 pub type Identifier = String;
 pub type TypeIdentifier = String;
 
-
-
-#[derive(Debug)]
-pub struct StackFrame<'src> {
-    slots: Vec<Option<StackSlot>>,
-    return_address: InstructionAddress,
-    is_base: bool,
-    // vector of upvalue indices
-    upvalues: Rc<[usize]>,
-    code_chunk: &'src CodeChunk,
-}
-impl <'src> StackFrame<'src> {
-    pub fn base(code_chunk: &'src CodeChunk) -> Self {
-        Self {
-            slots: vec![None; 8],
-            return_address: 0,
-            is_base: true,
-            upvalues: Rc::new([]),
-            code_chunk,
-        }
-    }
-
-    pub fn new(code_chunk: &'src CodeChunk, return_address: InstructionAddress, upvalues: Rc<[usize]>) -> Self {
-        Self {
-            slots: vec![None; 8],
-            return_address,
-            is_base: false,
-            code_chunk,
-            upvalues,
-        }
-    }
-
-    pub fn resize_if_needed(&mut self, index: usize) {
-        let size = self.slots.len();
-        if(index > size) {
-            let new_size = f64::log2(index as f64 / size as f64).ceil() as usize;
-            self.slots.resize(new_size, None);
-        }
-    }
-
-    pub fn load(&self, index: usize) -> StackValue {
-        (**self.slots[index].as_ref().unwrap()).clone()
-    }
-
-    pub fn store(&mut self, index: usize, value: StackValue) {
-        self.resize_if_needed(index);
-        match &mut self.slots[index] {
-            None => {
-                self.slots[index] = Some(StackSlot::new(value))
-            }
-            Some(slot) => {
-                **slot = value;
-            }
-        }
-        // self.slots[index] = Some(value);
-    }
-
-    pub fn get_upvalue_idx(&self, index: usize) -> usize {
-        self.upvalues[index]
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct StackSlot {
     // if this is captured, this is the upvalue index its captured at
     captured: Option<usize>,
     data: StackValue,
 }
+#[allow(dead_code)]
 impl StackSlot {
     pub fn new(data: StackValue) -> Self {
         Self {
@@ -187,6 +129,7 @@ impl Into<StackValue> for StackSlot {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub enum ConstantPoolEntry {
     IntLit(i64),
     FloatLit(f64),
@@ -197,13 +140,13 @@ pub enum ConstantPoolEntry {
     // Subject to change
     Identifier(Identifier),
 }
-impl  ConstantPoolEntry {
+impl ConstantPoolEntry {
     pub fn as_stack_value(&self) -> StackValue {
         match self {
             ConstantPoolEntry::IntLit(i) => StackValue::Int(*i),
             ConstantPoolEntry::FloatLit(f) => StackValue::Float(*f),
             ConstantPoolEntry::CharLit(c) => StackValue::Char(*c),
-            ConstantPoolEntry::StringLit(s) => todo!(),
+            ConstantPoolEntry::StringLit(_s) => todo!(),
             _ => panic!("Can't load non value as a stack value!"),
         }
     }
@@ -250,6 +193,7 @@ pub struct SourceFile {
     pub main_code: CodeChunk,
     pub functions: Vec<CodeChunk>,
 }
+#[allow(dead_code)]
 impl SourceFile {
     pub fn get_func_code(&self, def: &FunctionDef) -> &CodeChunk {
         &self.functions[def.code_chunk]
@@ -266,7 +210,7 @@ impl SourceFile {
 
 
     fn _write_chunk(before: &str, chunk: &CodeChunk, f: &mut Formatter<'_>) -> std::fmt::Result {
-        for (i, instr) in chunk.data.iter().enumerate() {
+        for instr in chunk.data.iter() {
             write!(f, "{}{}\n", before, *instr)?;
         }
         Ok(())
@@ -294,7 +238,7 @@ impl Display for SourceFile {
 
 
 
-
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub enum Instruction {
     /// Pushes the int value -1 onto the stack.

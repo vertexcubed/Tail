@@ -1,20 +1,23 @@
-use std::rc::Rc;
 use crate::vm::vm::TailVirtualMachine;
 use std::time::Instant;
+use crate::ast::visit::AstVisitor;
+use crate::ast::Stmt;
+use crate::compile::visit::Compiler;
+use crate::ty::visit::TypeVisitor;
 
 mod vm;
+#[allow(dead_code)]
 mod ast;
+#[allow(dead_code)]
 mod ty;
+
 mod compile;
 
 /// Functions for making ASTs by hand. Solely for debugging
 #[allow(dead_code)]
 mod debug;
 
-use crate::ast::visit::AstVisitor;
-use crate::ast::Stmt;
-use crate::compile::visit::Compiler;
-use crate::ty::visit::TypeVisitor;
+// TODO: come up with a better way of doing this
 macro_rules! impl_id {
     ($typ:ty) => {
         impl std::ops::Add for $typ {
@@ -79,9 +82,9 @@ macro_rules! impl_id {
     };
 }
 pub(crate) use impl_id;
-use crate::vm::{StackSlot, StackValue, StructValue};
-use crate::vm::memory::MemoryAddress;
 
+
+// Helper function for running test code.
 fn run_code(code: impl FnOnce() -> Vec<Stmt>) {
     debug::init_counter();
     let stmts = code();
@@ -103,6 +106,7 @@ fn run_code(code: impl FnOnce() -> Vec<Stmt>) {
         let _ = type_visitor.ctxt.write_ty(&ty, &mut str);
         println!("val {}: {}", id, str);
     }
+    println!("Type checking complete.\n");
 
     println!("Compiling...");
 
@@ -113,39 +117,19 @@ fn run_code(code: impl FnOnce() -> Vec<Stmt>) {
     // this might be bad
     let source = compiler.build();
 
-    println!("Printing source file\n{}", source);
+    println!("Printing source file.\n{}", source);
 
     println!("Executing...");
 
     let mut vm = TailVirtualMachine::new(&source);
 
     let now = Instant::now();
-
     vm.run();
     let elapsed = now.elapsed().as_secs_f64() * 1000.0;
     vm._print_state();
     println!("Ran in {:.3}ms", elapsed);
 }
 
-
-struct SmallStackSlot {
-    captured: Option<usize>,
-    data: SmallStackValue,
-}
-enum SmallStackValue {
-    Int(i64),
-    Float(f64),
-    Char(char),
-    // Struct(StructValue),
-    Ref(MemoryAddress),
-    // index in constant pool of FunctionDef, followed by indices of upvalues
-    Closure(Rc<(usize, [usize])>),
-}
-
 fn main() {
-
-    // println!("{}", size_of::<Option<SmallStackSlot>>());
-    // println!("{}", size_of::<SmallStackSlot>());
-    // println!("{}", size_of::<Rc<[usize]>>());
-    run_code(debug::higher_order_closures);
+    run_code(debug::slides_code);
 }

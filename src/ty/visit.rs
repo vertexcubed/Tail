@@ -174,7 +174,7 @@ impl AstVisitor for TypeVisitor {
                 self.ctxt.unify_ret(&block_ret)?;
                 Ok(ty)
             },
-            ExprKind::Struct(strukt) => todo!(),
+            ExprKind::Struct(_strukt) => todo!(),
             ExprKind::Closure(name, args, body) => {
                 let arg_types = args.iter().map(|e| {
                     let ty = self.ctxt.new_type_var();

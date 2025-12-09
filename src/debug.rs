@@ -1,10 +1,9 @@
 use crate::ast;
-use crate::ast::{BinOp, Block, Expr, ExprKind, FuncBlock, Literal, NodeId, PlaceExpr, Stmt, StmtKind, UOp};
+use crate::ast::*;
 use crate::vm::def::{CaptureDef, FunctionDef};
 use crate::vm::vm::TailVirtualMachine;
-use crate::vm::Instruction::{Call, ClosPush, GLoad0, GLoad1, GLoad2, GStore0, GStore1, GStore2, IAdd, IPush, IPush1, IPush2, IPush3, IPush4, ISub, Load2, Ret, Store0, Store1, Store2, UpLoad, UpStore};
+use crate::vm::Instruction::*;
 use crate::vm::{CodeChunk, ConstantPoolEntry, SourceFile};
-use std::ops::{Add, Mul, Sub};
 use std::rc::Rc;
 use std::sync::Mutex;
 
@@ -214,10 +213,10 @@ fn call_expr(func: impl Into<Expr>, args: Vec<impl Into<Expr>>) -> Expr {
         kind: ExprKind::Call(Box::new(func.into()), args.into_iter().map(|a| a.into()).collect())
     }
 }
-fn ref_(expr: Expr) -> Expr {
+fn ref_(expr: impl Into<Expr>) -> Expr {
     Expr {
         id: new_id(),
-        kind: ExprKind::Ref(Box::new(expr))
+        kind: ExprKind::Ref(Box::new(expr.into()))
     }
 }
 fn deref(inner: impl Into<Expr>, num_derefs: usize) -> PlaceExpr {
@@ -253,11 +252,23 @@ fn empty_args() -> Vec<Expr> {
 
 
 
-
-
+//==================//
+// Testing Functions//
+//==================//
 
 
 pub fn factorial() -> Vec<Stmt> {
+    /* 
+    let factorial(n) = {
+        if n <= 1 {
+            return 1
+        }
+        return n * factorial(n - 1)
+    }
+    let a = factorial(5)
+    let b = factorial(10)
+    let d = factorial(2)
+    */
     vec![
         func("factorial", vec!["n"], vec![
             if_(ident("n").lte(int(1)), vec![
@@ -277,6 +288,17 @@ pub fn factorial() -> Vec<Stmt> {
 
 
 pub fn basic_refs() -> Vec<Stmt> {
+    /*
+    let addtwo(val) = 
+        *val = *val + 2
+    }
+    let a = ref 2
+    let b = ref 3
+    addtwo(a)
+    addtwo(b)
+    addtwo(b)
+    addtwo(a)
+     */
     vec![
         func("addtwo", vec!["val"], vec![
             ass_place(
@@ -293,8 +315,35 @@ pub fn basic_refs() -> Vec<Stmt> {
     ]
 }
 
-
+// Note: This code may not work in the future
 pub fn basic_closure() -> Vec<Stmt> {
+    /*
+    // Temporary functions, because panic!() not implemented yet
+    let foo() = { return -10 }
+    let bar() = { return -10 }
+    
+    let a = 2
+    {
+        let b = 20
+        let a = 3
+        foo = fun() -> {
+            a = a + 4
+            return a
+        }
+        bar = fun() -> {
+            a = a - 2
+            return a
+        }
+    }
+    {
+        let a = 20
+        let b = foo()
+        let b = foo()
+        let b = bar()
+        let b = foo()
+        let b = bar()
+    }
+     */
     vec![
         func("foo", vec![], vec![
             ret(int(-10))
@@ -318,11 +367,11 @@ pub fn basic_closure() -> Vec<Stmt> {
         ]).into(),
         block(vec![
             let_("a", int(20)),
-            let_("meow", call("foo", empty_args())),
-            let_("meow", call("foo", empty_args())),
-            let_("meow", call("bar", empty_args())),
-            let_("meow", call("foo", empty_args())),
-            let_("meow", call("bar", empty_args())),
+            let_("b", call("foo", empty_args())),
+            let_("b", call("foo", empty_args())),
+            let_("b", call("bar", empty_args())),
+            let_("b", call("foo", empty_args())),
+            let_("b", call("bar", empty_args())),
         ]).into(),
     ]
 }
@@ -330,6 +379,22 @@ pub fn basic_closure() -> Vec<Stmt> {
 
 pub fn higher_order_closures() -> Vec<Stmt> {
 
+    /*
+    let make() = {
+        let a = 3
+        let inner() = {
+            a = a + 2
+        }
+        return inner
+    }
+    let a = make()
+    let b = make()
+    a()
+    b()
+    b()
+    a()
+    b()
+     */
     vec![
         func("make", vec![], vec![
             let_("a", int(3)),
@@ -352,6 +417,16 @@ pub fn higher_order_closures() -> Vec<Stmt> {
 }
 
 pub fn bad_fib() -> Vec<Stmt> {
+    /*
+    let fib(n) = {
+        return if n <= 1 {
+            n
+        } else {
+            fib(n - 1) + fib(n - 2)
+        }
+    }
+    let a = fib(30)
+     */
     vec![
         func("fib", vec!["n"], vec![
             ret(
@@ -366,8 +441,8 @@ pub fn bad_fib() -> Vec<Stmt> {
         let_("a", call("fib", vec![int(30)])),
     ]
 }
-
-pub fn basic_upvalues() {
+// Essentially the same code as basic_closure, but as Bytecode
+pub fn bin_basic_closure() {
 
     let constant_pool = vec![
         ConstantPoolEntry::FunctionDef(Rc::new(FunctionDef {
@@ -413,8 +488,6 @@ pub fn basic_upvalues() {
         GStore1,
 
         // ... }
-        // Clear(0),
-        // Clear(1),
 
         // { ...
         // let a = 20
@@ -446,7 +519,6 @@ pub fn basic_upvalues() {
         Call,
 
         // ... }
-        // Clear(0)
     ]);
 
     let foo = CodeChunk::new(vec![
@@ -481,8 +553,8 @@ pub fn basic_upvalues() {
     let mut vm = TailVirtualMachine::new(&source);
     vm.run();
 }
-
-pub fn complex_upvalues() {
+// Essentially the same code as complex_closure, but as Bytecode
+pub fn bin_complex_closure() {
 
     let constants = vec![
         ConstantPoolEntry::FunctionDef(Rc::new(FunctionDef {
@@ -570,4 +642,44 @@ pub fn complex_upvalues() {
 
     let mut vm = TailVirtualMachine::new(&file);
     vm.run();
+}
+
+
+pub fn slides_code() -> Vec<Stmt> {
+    /*
+    let factorial(n) = {
+        if n <= 1 {
+            return 1
+        }
+        return n * factorial(n - 1)
+    }
+
+    let add_to(value) = {
+        *value += 5
+    }
+
+    let foo = ref 2
+    add_to(foo)
+    *foo += factorial(10)
+    */
+    vec![
+        func("factorial", vec!["n"], vec![
+            if_(ident("n").lte(1), vec![
+                ret(1)
+            ], empty_stmts()).to_stmt(),
+            ret(ident("n").mul(call("factorial", vec![ident("n").sub(1)])))
+        ]),
+        func("add_to", vec!["value"], vec![
+            ass_place(
+                deref(ident("value"), 1),
+                deref(ident("value"), 1).as_expr().add(5))
+        ]),
+        let_("foo", ref_(2)),
+        call("add_to", vec![ident("foo")]).into(),
+        ass_place(
+            deref(ident("foo"), 1),
+            deref(ident("foo"), 1).as_expr().add(
+                call("factorial", vec![10])
+            )),
+    ]
 }

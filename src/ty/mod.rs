@@ -3,7 +3,6 @@ use crate::impl_id;
 use crate::ty::infer::InferCtxt;
 use std::collections::{HashMap, VecDeque};
 use std::fmt::{Display, Formatter};
-use std::ops::{Add, Sub};
 
 pub mod visit;
 pub mod infer;

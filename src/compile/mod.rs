@@ -6,6 +6,7 @@ pub mod visit;
 
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
+#[allow(dead_code)]
 pub enum RawConstantEntry {
     Int(i64),
     // floats are not hashable so we do strings
@@ -23,8 +24,8 @@ impl Into<ConstantPoolEntry> for RawConstantEntry {
             RawConstantEntry::Float(data) => ConstantPoolEntry::FloatLit(data.parse::<f64>().unwrap()),
             RawConstantEntry::Char(data) => ConstantPoolEntry::CharLit(data),
             RawConstantEntry::String(data) => ConstantPoolEntry::StringLit(data),
-            RawConstantEntry::StructDef(data) => todo!(),
-            RawConstantEntry::Identifier(data) => todo!(),
+            RawConstantEntry::StructDef(_data) => todo!(),
+            RawConstantEntry::Identifier(_data) => todo!(),
             RawConstantEntry::Function(data) => ConstantPoolEntry::FunctionDef(Rc::new(data)),
         }
     }
@@ -35,6 +36,7 @@ pub struct CodeChunkBuilder {
     index: CodeChunkIndex,
     data: Vec<Instruction>,
 }
+#[allow(dead_code)]
 impl CodeChunkBuilder {
     pub fn root() -> Self {
         CodeChunkBuilder { 

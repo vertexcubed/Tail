@@ -56,7 +56,7 @@ impl InferCtxt {
             (TyKind::Float, TyKind::Float) => Ok(()),
             (TyKind::Char, TyKind::Char) => Ok(()),
             // TODO: make this row polymorphic
-            (TyKind::Struct(l_types), TyKind::Struct(r_types)) => todo!(),
+            (TyKind::Struct(_l_types), TyKind::Struct(_r_types)) => todo!(),
 
 
             (TyKind::Ref(l), TyKind::Ref(r)) => self.unify(l, r),
