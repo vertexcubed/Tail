@@ -258,7 +258,7 @@ fn empty_args() -> Vec<Expr> {
 
 
 pub fn factorial() -> Vec<Stmt> {
-    /* 
+    /*
     let factorial(n) = {
         if n <= 1 {
             return 1
@@ -289,7 +289,7 @@ pub fn factorial() -> Vec<Stmt> {
 
 pub fn basic_refs() -> Vec<Stmt> {
     /*
-    let addtwo(val) = 
+    let addtwo(val) =
         *val = *val + 2
     }
     let a = ref 2
@@ -321,7 +321,7 @@ pub fn basic_closure() -> Vec<Stmt> {
     // Temporary functions, because panic!() not implemented yet
     let foo() = { return -10 }
     let bar() = { return -10 }
-    
+
     let a = 2
     {
         let b = 20
@@ -377,7 +377,7 @@ pub fn basic_closure() -> Vec<Stmt> {
 }
 
 
-pub fn higher_order_closures() -> Vec<Stmt> {
+pub fn complex_closure() -> Vec<Stmt> {
 
     /*
     let make() = {

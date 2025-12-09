@@ -130,6 +130,28 @@ fn run_code(code: impl FnOnce() -> Vec<Stmt>) {
     println!("Ran in {:.3}ms", elapsed);
 }
 
+#[derive(clap::Parser, Debug)]
+struct CliConfig {
+    /// Sets the test function to run. Defaults to slides_code
+    #[arg(short, long, default_value = "slides_code")]
+    test: String
+}
+
+
+
 fn main() {
-    run_code(debug::slides_code);
+
+    let config: CliConfig = <CliConfig as clap::Parser>::parse().into();
+
+    let to_run = match config.test.as_str() {
+        "slides_code" => debug::slides_code,
+        "factorial" => debug::factorial,
+        "bad_fib" => debug::bad_fib,
+        "basic_closure" => debug::basic_closure,
+        "complex_closure" => debug::complex_closure,
+        "basic_refs" => debug::basic_refs,
+        s => panic!("Unknown test function: {}", s)
+    };
+    println!("Running {}.\n\n", config.test);
+    run_code(to_run);
 }
