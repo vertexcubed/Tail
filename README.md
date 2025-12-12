@@ -9,7 +9,6 @@ Tail is compiled down to bytecode IR, allowing it to run fast and efficiently.
 - Simple, clean syntax that’s easy to read and write
 - HM Type Inference
 - First class functions/closures
-- Row polymorphic structs—write functions on structs with explicit fields
 - Pass by value semantics
 - Explicit heap-allocated references
 - A simple stack based VM to execute bytecode
