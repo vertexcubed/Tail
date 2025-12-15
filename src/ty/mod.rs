@@ -1,4 +1,4 @@
-use crate::ast::Identifier;
+use crate::ast::{Identifier, NodeId};
 use crate::impl_id;
 use crate::ty::infer::InferCtxt;
 use std::collections::{HashMap, VecDeque};
@@ -272,4 +272,14 @@ pub struct CommonTypes {
     pub bool: Ty,
     pub char: Ty,
     pub unit: Ty,
+}
+
+#[derive(Debug)]
+pub struct ExportedTypes {
+    node_types: HashMap<NodeId, Ty>
+}
+impl ExportedTypes {
+    pub fn get_node_type(&self, node: &NodeId) -> Option<&Ty> {
+        self.node_types.get(node)
+    }
 }

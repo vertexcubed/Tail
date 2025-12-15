@@ -112,7 +112,7 @@ impl CallFrame {
     }
 }
 
-
+pub const MAX_OP_STACK_SIZE: usize = 1024 * 1024;
 pub const MAX_STACK_SIZE: usize = 1024 * 1024 * 8 / 32;
 pub const MAX_FRAMES: usize = 1024;
 
@@ -228,55 +228,3 @@ impl CallStack {
 
     fn print_locals(&self) {}
 }
-
-
-// impl <'src> StackFrame<'src> {
-//     pub fn base(code_chunk: &'src CodeChunk) -> Self {
-//         Self {
-//             slots: vec![None; 8],
-//             return_address: 0,
-//             is_base: true,
-//             upvalues: Rc::new([]),
-//             code_chunk,
-//         }
-//     }
-//
-//     pub fn new(code_chunk: &'src CodeChunk, return_address: Address, upvalues: Rc<[usize]>) -> Self {
-//         Self {
-//             slots: vec![None; 8],
-//             return_address,
-//             is_base: false,
-//             code_chunk,
-//             upvalues,
-//         }
-//     }
-//
-//     pub fn resize_if_needed(&mut self, index: usize) {
-//         let size = self.slots.len();
-//         if(index > size) {
-//             let new_size = f64::log2(index as f64 / size as f64).ceil() as usize;
-//             self.slots.resize(new_size, None);
-//         }
-//     }
-//
-//     pub fn load(&self, index: usize) -> StackValue {
-//         (**self.slots[index].as_ref().unwrap()).clone()
-//     }
-//
-//     pub fn store(&mut self, index: usize, value: StackValue) {
-//         self.resize_if_needed(index);
-//         match &mut self.slots[index] {
-//             None => {
-//                 self.slots[index] = Some(StackSlot::new(value))
-//             }
-//             Some(slot) => {
-//                 **slot = value;
-//             }
-//         }
-//         // self.slots[index] = Some(value);
-//     }
-//
-//     pub fn get_upvalue_idx(&self, index: usize) -> usize {
-//         self.upvalues[index]
-//     }
-// }

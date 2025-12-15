@@ -1,6 +1,6 @@
 use crate::ast::visit::AstVisitor;
 use crate::ast::{BinOp, Block, Expr, ExprKind, FuncBlock, Identifier, Literal, NodeId, Stmt, StmtKind, UOp};
-use crate::ty::{Ty, TyCtxt, TyError};
+use crate::ty::{ExportedTypes, Ty, TyCtxt, TyError};
 use std::collections::HashMap;
 
 #[derive(Debug)]
@@ -33,6 +33,18 @@ impl TypeVisitor {
 
     pub fn set_type_of_expr(&mut self, node: NodeId, ty: Ty) {
         self.node_types.insert(node, ty);
+    }
+
+    pub fn export(mut self) -> ExportedTypes {
+        let mut map = HashMap::with_capacity(self.node_types.len());
+        for (k, v) in self.node_types.into_iter() {
+            let found_ty = self.ctxt.infer_ctxt.normalize(&v);
+            map.insert(k, found_ty.clone());
+        }
+
+        ExportedTypes {
+            node_types: map
+        }
     }
 }
 impl AstVisitor for TypeVisitor {
@@ -172,6 +184,7 @@ impl AstVisitor for TypeVisitor {
                 let block_ret = self.ctxt.get_ret_ty();
                 self.ctxt.exit_scope();
                 self.ctxt.unify_ret(&block_ret)?;
+                self.set_type_of_expr(expr.id, ty.clone());
                 Ok(ty)
             },
             ExprKind::Struct(_strukt) => todo!(),

@@ -4,8 +4,10 @@ use crate::compile::{CodeChunkBuilder, CodeChunkIndex, CompileError, RawConstant
 use crate::vm::def::{CaptureDef, FunctionDef};
 use crate::vm::{CodeChunk, Instruction, SourceFile};
 use std::collections::HashMap;
+use crate::ty::{ExportedTypes, TyKind};
 
 pub struct Compiler {
+    exported_types: ExportedTypes,
     constant_pool: HashMap<RawConstantEntry, usize>,
     next_pool_slot: usize,
     frame_stack: Vec<FrameCompiler>,
@@ -14,8 +16,10 @@ pub struct Compiler {
     next_func_index: usize,
 }
 impl Compiler {
-    pub fn new() -> Self {
+    pub fn new(exported_types: ExportedTypes) -> Self {
+        println!("{:?}", exported_types);
         Self {
+            exported_types,
             constant_pool: HashMap::new(),
             next_pool_slot: 0,
             next_global_slot: 0,
@@ -249,6 +253,10 @@ impl AstVisitor for Compiler {
             StmtKind::Let(id, body) => {
                 // visit the body expr, which pushes its result onto the stack
                 self.visit_expr(body)?;
+                let expr_ty = self.exported_types.get_node_type(&body.id);
+                if expr_ty.is_some() && matches!(expr_ty.unwrap().kind, TyKind::Unit) {
+                    self.frame().push_instr(Instruction::IPush0);
+                }
                 // then, we store it into the next available slot.
                 // cases:
                 //      does not exist: just add a new value, easy. then we can just do the shit ig
@@ -341,10 +349,18 @@ impl AstVisitor for Compiler {
                         self.frame().push_instr(Instruction::Deref);
                     }
                     self.visit_expr(body)?;
+                    let expr_ty = self.exported_types.get_node_type(&body.id);
+                    if expr_ty.is_some() && matches!(expr_ty.unwrap().kind, TyKind::Unit) {
+                        self.frame().push_instr(Instruction::IPush0);
+                    }
                     self.frame().push_instr(Instruction::Write);
                 }
                 else {
                     self.visit_expr(body)?;
+                    let expr_ty = self.exported_types.get_node_type(&body.id);
+                    if expr_ty.is_some() && matches!(expr_ty.unwrap().kind, TyKind::Unit) {
+                        self.frame().push_instr(Instruction::IPush0);
+                    }
                     self.frame().push_instr(store);
                 }
 
@@ -354,7 +370,16 @@ impl AstVisitor for Compiler {
             // expressions are easy: just compile, then void the output (pop it off the stack)
             StmtKind::Expr(e) => {
                 self.visit_expr(e)?;
-                self.frame().push_instr(Instruction::Pop);
+
+                // only pop if the value of expr is not unit - unit values wont be pushed
+                let should_pop = {
+                    let expr_ty = self.exported_types.get_node_type(&e.id);
+                    expr_ty.is_none() || !matches!(expr_ty.unwrap().kind, TyKind::Unit)
+                };
+                if should_pop {
+                    self.frame().push_instr(Instruction::Pop);
+                }
+
                 Ok(())
             }
             // returns are also easy: just compile the expr then push a "ret" instruction
@@ -362,9 +387,10 @@ impl AstVisitor for Compiler {
                 if let Some(e) = body {
                     self.visit_expr(e)?;
                 }
-                else {
-                    self.frame().push_instr(Instruction::IPush0);
-                }
+                // else {
+                //     // Push Unit
+                //     self.frame().push_instr(Instruction::IPush0);
+                // }
                 self.frame().push_instr(Instruction::Ret);
                 Ok(())
             }
@@ -374,6 +400,15 @@ impl AstVisitor for Compiler {
     fn visit_expr(&mut self, expr: &Expr) -> Self::ExprResult {
         match &expr.kind {
             ExprKind::Ident(id) => {
+
+                let expr_ty = self.exported_types.get_node_type(&expr.id);
+                // if we're unit, we skip loading entirely.
+                if expr_ty.is_some() && matches!(expr_ty.unwrap().kind, TyKind::Unit) {
+                    return Ok(())
+                }
+
+
+
                 // can't find identifier - resolve either a global or upvalue and store it.
                 if self.frame().frame_variable_slots.get_mut(id).is_none() {
 
@@ -410,6 +445,7 @@ impl AstVisitor for Compiler {
             },
             ExprKind::Lit(lit) => self.visit_literal(lit),
             ExprKind::UnaryOp(uop, operand) => {
+                // TODO: unary unit operators? No lol
                 self.visit_expr(operand)?;
                 let instr = match uop {
                     // boolean not actually behaves identically to Eq -> if 0, push 1. if not 0, push 0.
@@ -422,12 +458,14 @@ impl AstVisitor for Compiler {
             },
 
             ExprKind::BinaryOp(bop, left, right) => {
+                // TODO: binary operators on unit?
                 // TODO: Update calling convention to be left -> right not right -> left (unintuitive)
                 self.visit_expr(right)?;
                 self.visit_expr(left)?;
                 self.frame()._push_bop_instr(bop)
             },
             ExprKind::If(cond, then_branch, else_branch) => {
+                // this is always a bool - no need to unit check
                 self.visit_expr(cond)?;
                 // this is used to later write the correct jump address
                 let cond_jump_ip = self.frame().push_instr(Instruction::JEq(0)); // temp address
@@ -511,7 +549,12 @@ impl AstVisitor for Compiler {
 
                 for a in args.iter().rev() {
                     self.visit_expr(a)?;
+                    let expr_ty = self.exported_types.get_node_type(&a.id);
+                    if expr_ty.is_some() && matches!(expr_ty.unwrap().kind, TyKind::Unit) {
+                        self.frame().push_instr(Instruction::IPush0);
+                    }
                 }
+                // guaranteed to be a function, no need to unit check
                 self.visit_expr(func)?;
                 self.frame().push_instr(Instruction::Call);
 
@@ -519,6 +562,10 @@ impl AstVisitor for Compiler {
             },
             ExprKind::Ref(e) => {
                 self.visit_expr(e)?;
+                let expr_ty = self.exported_types.get_node_type(&e.id);
+                if expr_ty.is_some() && matches!(expr_ty.unwrap().kind, TyKind::Unit) {
+                    self.frame().push_instr(Instruction::IPush0);
+                }
                 self.frame().push_instr(Instruction::Alloc);
                 Ok(())
             },
@@ -528,6 +575,7 @@ impl AstVisitor for Compiler {
             ExprKind::Struct(_) => todo!(),
             ExprKind::Place(p) => {
 
+                // we don't have to do unit checks here - this expressiion will always either be a variable name or an expr of type ref 'a
                 self.visit_expr(p.inner.as_ref())?;
                 for _ in 0..p.derefs {
                     self.frame().push_instr(Instruction::Deref);
@@ -545,9 +593,11 @@ impl AstVisitor for Compiler {
         self.frame().scope_level += 1;
 
 
-        // if block is empty: push a () and thats it.
+        // if block is empty: push Unit and thats it.
         if block.stmts.is_empty() {
-            self.frame().push_instr(Instruction::IPush0);
+            // self.frame().push_instr(Instruction::IPush0);
+            // be sure to fix scope level!
+            self.frame().scope_level -= 1;
             return Ok(());
         }
         for (i, stmt) in block.stmts.iter().enumerate() {
@@ -560,7 +610,7 @@ impl AstVisitor for Compiler {
                 else {
                     // just visit normally and push unit onto the stack
                     self.visit_stmt(stmt)?;
-                    self.frame().push_instr(Instruction::IPush0);
+                    // self.frame().push_instr(Instruction::IPush0);
                 }
             }
             else {
@@ -584,7 +634,8 @@ impl AstVisitor for Compiler {
             self.visit_stmt(stmt)?;
         }
         if self.frame().chunk.is_empty() || !matches!(self.frame().chunk.last(), Instruction::Ret) {
-            self.frame().push_instr(Instruction::IPush0);
+            // Push Unit
+            // self.frame().push_instr(Instruction::IPush0);
             self.frame().push_instr(Instruction::Ret);
         }
         Ok(())
@@ -617,7 +668,8 @@ impl AstVisitor for Compiler {
             Literal::Str(_s) => todo!(),
             Literal::Bool(true) => Instruction::IPush1,
             Literal::Bool(false) => Instruction::IPush0,
-            Literal::Unit => Instruction::IPush0,
+            // we're going to trust whoever's reading this value pushes unit themself if needed
+            Literal::Unit => return Ok(()),
         };
         self.frame().push_instr(instr);
         Ok(())

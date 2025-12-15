@@ -133,6 +133,22 @@ impl InferCtxt {
         }
 
     }
+
+    pub fn normalize(&mut self, ty: &Ty) -> Ty {
+        let found_ty = self.find(ty).clone();
+        match &found_ty.kind {
+            TyKind::Int | TyKind::Float | TyKind::Bool | TyKind::Char | TyKind::Unit => found_ty.clone(),
+            TyKind::Struct(_) => todo!(),
+            TyKind::Ref(t) => Ty::new(found_ty.id, TyKind::Ref(Box::new(self.normalize(t)))),
+            TyKind::Infer(_) => found_ty.clone(),
+            TyKind::Function(args, ret) => {
+                Ty::new(found_ty.id, TyKind::Function(
+                    args.iter().map(|a| self.normalize(a)).collect(),
+                    Box::new(self.normalize(ret))
+                ))
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

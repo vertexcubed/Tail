@@ -1,1 +1,1 @@
-PowerShell.exe -Command { $env:CARGO_PROFILE_RELEASE_DEBUG="true"; cargo flamegraph }
+PowerShell.exe -Command { $env:CARGO_PROFILE_RELEASE_DEBUG="true"; cargo flamegraph -- -t bad_fib }

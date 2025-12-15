@@ -102,7 +102,7 @@ fn ret(value: impl Into<Expr>) -> Stmt {
         kind: StmtKind::Ret(Some(Box::new(value.into())))
     }
 }
-fn _ret_unit() -> Stmt {
+fn ret_unit() -> Stmt {
     Stmt {
         id: new_id(),
         kind: StmtKind::Ret(None)
@@ -140,6 +140,11 @@ impl Into<Expr> for bool {
         bool(self)
     }
 }
+impl Into<Expr> for () {
+    fn into(self) -> Expr {
+        unit()
+    }
+}
 
 
 fn int(value: i64) -> Expr {
@@ -152,6 +157,12 @@ fn bool(value: bool) -> Expr {
     Expr {
         id: new_id(),
         kind: ExprKind::Lit(Literal::Bool(value))
+    }
+}
+fn unit() -> Expr {
+    Expr {
+        id: new_id(),
+        kind: ExprKind::Lit(Literal::Unit)
     }
 }
 fn ident(name: &str) -> Expr {
@@ -681,5 +692,38 @@ pub fn slides_code() -> Vec<Stmt> {
             deref(ident("foo"), 1).as_expr().add(
                 call("factorial", vec![10])
             )),
+    ]
+}
+
+
+pub fn unit_values() -> Vec<Stmt> {
+    vec![
+        // store unit into x
+        let_("x", ()),
+        // push 2, pop it
+        block(vec![
+            int(2),
+        ])._as_expr().into(),
+        // do nothing
+        block(empty_stmts())._as_expr().into(),
+        // assign unit to x
+        assign("x", ()),
+        // do nothing
+        ident("x").into(),
+        // do nothing
+        unit().into(),
+        // store unit into y
+        let_("y", ident("x")),
+        func("meow", vec!["a", "unit"], vec![
+            assign("a", 4),
+            ret(ident("unit"))
+        ]),
+        // this should push unit and pop it
+        call("meow", vec![int(2), unit()]).into(),
+        func("other", vec![], vec![
+            ret_unit()
+        ]),
+        // this should not push unit
+        call("other", empty_args()).into(),
     ]
 }

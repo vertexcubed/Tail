@@ -110,7 +110,7 @@ fn run_code(code: impl FnOnce() -> Vec<Stmt>) {
 
     println!("Compiling...");
 
-    let mut compiler = Compiler::new();
+    let mut compiler = Compiler::new(type_visitor.export());
     for s in stmts.iter() {
         compiler.visit_stmt(s).unwrap();
     }
@@ -150,8 +150,9 @@ fn main() {
         "basic_closure" => debug::basic_closure,
         "complex_closure" => debug::complex_closure,
         "basic_refs" => debug::basic_refs,
+        "unit_values" => debug::unit_values,
         s => panic!("Unknown test function: {}", s)
     };
-    println!("Running {}.\n\n", config.test);
+    println!("Running {}\n\n", config.test);
     run_code(to_run);
 }
